@@ -42,6 +42,28 @@ let cachedServer: ServerEnv | null = null;
  * Next.js inlines `process.env.NEXT_PUBLIC_*` only for statically written
  * references, so these must be spelled out rather than read dynamically.
  */
+export interface ConfigStatus {
+  ok: boolean;
+  missing: string[];
+}
+
+/**
+ * Non-throwing check for the variables the app cannot start without.
+ *
+ * The proxy uses this to send traffic to /setup with an explanation, rather
+ * than throwing and leaving the browser with a bare 500.
+ */
+export function supabaseConfigStatus(): ConfigStatus {
+  const missing: string[] = [];
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) missing.push('NEXT_PUBLIC_SUPABASE_URL');
+  if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) missing.push('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  return { ok: missing.length === 0, missing };
+}
+
+export function hasServiceRoleKey(): boolean {
+  return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
 export function publicEnv(): PublicEnv {
   if (cachedPublic) return cachedPublic;
   const parsed = publicSchema.safeParse({

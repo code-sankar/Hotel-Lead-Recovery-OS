@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
-import { publicEnv } from '@/lib/env';
+import { publicEnv, supabaseConfigStatus } from '@/lib/env';
 
-const PUBLIC_PATHS = ['/login', '/signup', '/reset-password', '/update-password', '/auth'];
+const PUBLIC_PATHS = ['/login', '/signup', '/reset-password', '/update-password', '/auth', '/setup'];
 
 /**
  * Refreshes the Supabase session cookie on every request and keeps
@@ -10,6 +10,17 @@ const PUBLIC_PATHS = ['/login', '/signup', '/reset-password', '/update-password'
  * is still enforced per-query by RLS.
  */
 export async function proxy(request: NextRequest) {
+  // Without Supabase credentials nothing can work, so send the visitor to a
+  // page that says what is missing instead of throwing a 500 at them.
+  const config = supabaseConfigStatus();
+  if (!config.ok) {
+    if (request.nextUrl.pathname === '/setup') return NextResponse.next();
+    const setupUrl = request.nextUrl.clone();
+    setupUrl.pathname = '/setup';
+    setupUrl.search = '';
+    return NextResponse.redirect(setupUrl);
+  }
+
   let response = NextResponse.next({ request });
   const env = publicEnv();
 

@@ -126,6 +126,11 @@ cp .env.example .env.local     # fill in the Supabase values
 npm run dev                    # http://localhost:3000
 ```
 
+**Not configured yet?** Every route redirects to `/setup`, which checks your
+environment variables, whether Supabase is reachable, and whether the migrations
+have been applied — and tells you how to fix whatever is missing. Visit it any
+time to diagnose a broken environment.
+
 Then:
 
 1. Sign up at `/signup`.
