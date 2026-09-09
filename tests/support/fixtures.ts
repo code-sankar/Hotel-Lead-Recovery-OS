@@ -148,7 +148,7 @@ export function seedBusiness(
       id: randomUUID(),
       business_id: id,
       purpose,
-      template_name: `hlr_${purpose}`,
+      template_name: `leadstay_${purpose}`,
       language_code: 'en',
       body_preview: null,
       variable_map: [],

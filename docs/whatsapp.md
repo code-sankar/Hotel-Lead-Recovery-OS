@@ -66,9 +66,9 @@ from any message text:
 
 | Purpose | Default name | Used for |
 | --- | --- | --- |
-| `follow_up_1` | `hlr_follow_up_1` | First automated follow-up |
-| `follow_up_2` | `hlr_follow_up_2` | Second automated follow-up |
-| `reengagement` | `hlr_reengagement` | Staff or assistant replies outside the window |
+| `follow_up_1` | `leadstay_follow_up_1` | First automated follow-up |
+| `follow_up_2` | `leadstay_follow_up_2` | Second automated follow-up |
+| `reengagement` | `leadstay_reengagement` | Staff or assistant replies outside the window |
 
 Suggested bodies are shown in Settings → Follow-ups. You must create and get these
 approved in your own WhatsApp Business account; the app cannot do it for you.

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Hotel Lead Recovery OS — core schema
+-- Lead Stay — core schema
 --
 -- Design rules enforced here:
 --   * Every tenant-owned row carries business_id (tenant isolation key).

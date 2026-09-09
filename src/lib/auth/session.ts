@@ -8,7 +8,7 @@ import type { Business, MemberRole, Profile } from '@/types/domain';
 import { createServerSupabase } from '@/lib/db/server-client';
 import { can, type Capability } from './permissions';
 
-export const ACTIVE_BUSINESS_COOKIE = 'hlr_active_business';
+export const ACTIVE_BUSINESS_COOKIE = 'leadstay_active_business';
 
 export interface Membership {
   business: Business;

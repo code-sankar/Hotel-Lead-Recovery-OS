@@ -6,7 +6,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       {/* The value proposition, stated plainly. No stock imagery. */}
       <section className="hidden flex-col justify-between bg-ink-950 px-12 py-12 text-ink-100 lg:flex">
         <Link href="/" className="text-sm font-semibold tracking-tight text-white">
-          Hotel Lead Recovery OS
+          Lead Stay
         </Link>
         <div className="max-w-md">
           <p className="text-2xl font-semibold leading-snug text-white">

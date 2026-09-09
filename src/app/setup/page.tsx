@@ -178,7 +178,7 @@ export default async function SetupPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center px-6 py-12">
       <h1 className="text-xl font-semibold tracking-tight text-ink-900">
-        {blocked ? 'Finish setting up Hotel Lead Recovery OS' : 'Setup looks good'}
+        {blocked ? 'Finish setting up Lead Stay' : 'Setup looks good'}
       </h1>
       <p className="mt-1 text-[13px] text-ink-500">
         {blocked

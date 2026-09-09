@@ -11,7 +11,7 @@ export interface JobPayloads {
   sweep_follow_ups: { limit?: number };
 }
 
-export const QUEUE_NAME = 'hotel-lead-recovery';
+export const QUEUE_NAME = 'lead-stay';
 
 /**
  * A stable job id makes enqueueing idempotent: a retried webhook produces the

@@ -180,8 +180,8 @@ export default async function FollowUpSettingsPage() {
           WhatsApp only allows free-form messages within 24 hours of the guest’s last message. A
           follow-up sent after that must use a template approved by Meta. This app stores the
           template name to use for each step (
-          <code className="rounded bg-ink-100 px-1 py-0.5 text-[12px]">hlr_follow_up_1</code>,{' '}
-          <code className="rounded bg-ink-100 px-1 py-0.5 text-[12px]">hlr_follow_up_2</code>); you
+          <code className="rounded bg-ink-100 px-1 py-0.5 text-[12px]">leadstay_follow_up_1</code>,{' '}
+          <code className="rounded bg-ink-100 px-1 py-0.5 text-[12px]">leadstay_follow_up_2</code>); you
           must create and get those templates approved in your WhatsApp Business account. Until then,
           live follow-ups outside the window will be recorded as failed with the reason — they are
           never silently dropped. In demo mode nothing is sent to Meta at all.

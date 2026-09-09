@@ -21,7 +21,7 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
       >
         <main style={{ maxWidth: '32rem', padding: '2rem' }}>
           <h1 style={{ fontSize: '1.125rem', fontWeight: 600, margin: 0 }}>
-            Hotel Lead Recovery OS could not start
+            Lead Stay could not start
           </h1>
           <p style={{ fontSize: '0.8125rem', color: '#475569', marginTop: '0.25rem' }}>
             This usually means the environment is not configured yet.

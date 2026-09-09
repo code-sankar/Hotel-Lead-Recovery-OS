@@ -190,11 +190,11 @@ begin
   -- (which land outside the 24-hour window) can be delivered.
   insert into whatsapp_templates (business_id, purpose, template_name, language_code, body_preview)
   values
-    (target_business_id, 'follow_up_1', 'hlr_follow_up_1', 'en',
+    (target_business_id, 'follow_up_1', 'leadstay_follow_up_1', 'en',
      'Hi {{1}}, just checking whether you had a chance to look at the room options at {{2}}.'),
-    (target_business_id, 'follow_up_2', 'hlr_follow_up_2', 'en',
+    (target_business_id, 'follow_up_2', 'leadstay_follow_up_2', 'en',
      'Hi {{1}}, we are happy to help with your stay at {{2}} whenever you are ready.'),
-    (target_business_id, 'reengagement', 'hlr_reengagement', 'en',
+    (target_business_id, 'reengagement', 'leadstay_reengagement', 'en',
      'Hi {{1}}, this is {{2}}. We have an update on your enquiry.')
   on conflict (business_id, purpose) do nothing;
 end;

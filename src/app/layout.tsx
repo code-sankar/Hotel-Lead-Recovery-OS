@@ -4,8 +4,8 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Hotel Lead Recovery OS',
-    template: '%s · Hotel Lead Recovery OS',
+    default: 'Lead Stay',
+    template: '%s · Lead Stay',
   },
   description:
     'Capture WhatsApp hotel enquiries, follow up automatically, and see the revenue you recover.',

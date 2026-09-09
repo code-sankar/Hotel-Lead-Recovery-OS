@@ -1,4 +1,4 @@
-# Hotel Lead Recovery OS
+# Lead Stay
 
 WhatsApp-first lead recovery for independent hotels.
 
@@ -118,6 +118,9 @@ More detail in [`docs/architecture.md`](docs/architecture.md).
 
 Requirements: Node 20+ (developed on 22), a Supabase project, and optionally Redis.
 
+The git repository is still named `Hotel-Lead-Recovery-OS`; the product is
+**Lead Stay**.
+
 ```bash
 git clone <this repo>
 cd Hotel-Lead-Recovery-OS
@@ -217,7 +220,7 @@ No WhatsApp Web automation, no browser drivers, no guest credentials.
 4. In Meta, set the callback URL to `https://<your-domain>/api/webhooks/whatsapp`,
    use the same verify token, and subscribe to the `messages` field.
 5. Create and get approval for the follow-up templates named on the Follow-ups
-   settings page (`hlr_follow_up_1`, `hlr_follow_up_2`, `hlr_reengagement`).
+   settings page (`leadstay_follow_up_1`, `leadstay_follow_up_2`, `leadstay_reengagement`).
 6. Switch messaging mode to **Live**.
 
 Step 5 is not optional: WhatsApp only permits free-form messages within 24 hours
