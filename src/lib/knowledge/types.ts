@@ -45,6 +45,8 @@ export interface KnowledgeRoom {
   amenities: string[];
   breakfastIncluded: boolean;
   notes: string | null;
+  /** Physical rooms of this type; the baseline for availability. */
+  totalUnits: number;
 }
 
 export interface KnowledgePolicy {

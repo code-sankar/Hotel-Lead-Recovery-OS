@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   AiAction,
   AnalyticsEvent,
+  Booking,
   Business,
   BusinessProfile,
   BusinessSettings,
@@ -17,12 +18,14 @@ import type {
   LeadEvent,
   Message,
   Room,
+  RoomAvailability,
   WhatsAppIntegrationSecrets,
   WhatsAppTemplate,
 } from '@/types/domain';
 import type { HotelKnowledge } from '@/lib/knowledge/types';
 import { createServiceSupabase } from './service-client';
 import type {
+  CreateBookingInput,
   CreateFollowUpInput,
   CreateLeadInput,
   FindOrCreateCustomerInput,
@@ -111,6 +114,7 @@ export class SupabaseStore implements Store {
         amenities: room.amenities ?? [],
         breakfastIncluded: room.breakfast_included,
         notes: room.notes,
+        totalUnits: room.total_units,
       })),
       policies: policies.map((policy) => ({
         type: policy.type,
@@ -532,6 +536,59 @@ export class SupabaseStore implements Store {
       .limit(limit);
     if (error) throw dbError('listDueFollowUps', error);
     return (data ?? []) as FollowUp[];
+  }
+
+  // --- availability --------------------------------------------------------
+
+  async listRoomAvailability(
+    businessId: string,
+    from: string,
+    to: string,
+  ): Promise<RoomAvailability[]> {
+    const { data, error } = await this.client
+      .from('room_availability')
+      .select('*')
+      .eq('business_id', businessId)
+      .gte('date', from)
+      .lt('date', to);
+    if (error) throw dbError('listRoomAvailability', error);
+    return (data ?? []) as RoomAvailability[];
+  }
+
+  async listBookings(businessId: string, from: string, to: string): Promise<Booking[]> {
+    // Overlap test: a stay touches the window when it starts before the window
+    // ends and finishes after the window starts.
+    const { data, error } = await this.client
+      .from('bookings')
+      .select('*')
+      .eq('business_id', businessId)
+      .eq('status', 'confirmed')
+      .lt('check_in', to)
+      .gt('check_out', from);
+    if (error) throw dbError('listBookings', error);
+    return (data ?? []) as Booking[];
+  }
+
+  async createBooking(input: CreateBookingInput): Promise<Booking> {
+    const { data, error } = await this.client
+      .from('bookings')
+      .insert({
+        business_id: input.businessId,
+        lead_id: input.leadId ?? null,
+        customer_id: input.customerId,
+        room_id: input.roomId,
+        check_in: input.checkIn,
+        check_out: input.checkOut,
+        units: input.units ?? 1,
+        guests: input.guests ?? null,
+        total_value: input.totalValue ?? null,
+        notes: input.notes ?? null,
+        created_by: input.createdBy ?? null,
+      })
+      .select('*')
+      .single();
+    if (error) throw dbError('createBooking', error);
+    return data as Booking;
   }
 
   // --- telemetry -----------------------------------------------------------

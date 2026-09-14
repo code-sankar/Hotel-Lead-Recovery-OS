@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { requireCapability } from '@/lib/auth/session';
 import { createServerSupabase } from '@/lib/db/server-client';
 import type { BusinessSettings } from '@/types/domain';
@@ -92,10 +93,11 @@ export default async function AiSettingsPage() {
       <SettingsSection title="What the assistant will never do" description="Enforced in code, not only in the prompt.">
         <ul className="flex flex-col gap-2 text-[13px] text-ink-600">
           {[
-            'Say a room is available on a date — this system has no live inventory, so availability is always confirmed by your team.',
+            'Say a room is free unless your availability says so, for exactly the dates being discussed.',
+            'Say you are fully booked when your availability says a room is free.',
             'Quote a price that is not one of your configured room rates (multiplying a rate by the number of nights is allowed).',
             'Mention a room type you have not created.',
-            'Say a booking has been made, held or confirmed.',
+            'Say a booking has been made, held or confirmed — only your team creates a booking.',
             'Say a payment has been received.',
             'Offer a discount, upgrade or anything complimentary.',
           ].map((rule) => (
@@ -108,6 +110,15 @@ export default async function AiSettingsPage() {
         <p className="mt-4 rounded-md bg-ink-50 px-3 py-2.5 text-[13px] text-ink-600">
           If a generated reply breaks one of these rules it is not sent. Your escalation message goes
           out instead and the conversation moves to your team.
+        </p>
+        <p className="mt-3 rounded-md bg-ink-50 px-3 py-2.5 text-[13px] text-ink-600">
+          Availability is checked by the app, never by the model: when a guest gives dates, those
+          dates are looked up in{' '}
+          <Link href="/settings/availability" className="font-medium text-accent-600 hover:text-accent-700">
+            your availability
+          </Link>{' '}
+          before a word is written. With no dates in the conversation nothing is looked up, and the
+          assistant goes back to deferring to your team.
         </p>
       </SettingsSection>
 

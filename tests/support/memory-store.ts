@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   AiAction,
   AnalyticsEvent,
+  Booking,
   Business,
   BusinessSettings,
   Conversation,
@@ -11,11 +12,13 @@ import type {
   Lead,
   LeadEvent,
   Message,
+  RoomAvailability,
   WhatsAppIntegrationSecrets,
   WhatsAppTemplate,
 } from '@/types/domain';
 import type { HotelKnowledge } from '@/lib/knowledge/types';
 import type {
+  CreateBookingInput,
   CreateFollowUpInput,
   CreateLeadInput,
   FindOrCreateCustomerInput,
@@ -48,6 +51,8 @@ export class MemoryStore implements Store {
   followUps: FollowUp[] = [];
   aiActions: AiAction[] = [];
   analyticsEvents: AnalyticsEvent[] = [];
+  roomAvailability: RoomAvailability[] = [];
+  bookings: Booking[] = [];
   integrations = new Map<string, WhatsAppIntegrationSecrets>();
   templates: WhatsAppTemplate[] = [];
   webhookEvents = new Map<string, { status: string; error?: string }>();
@@ -372,6 +377,48 @@ export class MemoryStore implements Store {
       .filter((f) => f.status === 'scheduled' && new Date(f.scheduled_for) <= now)
       .sort((a, b) => a.scheduled_for.localeCompare(b.scheduled_for))
       .slice(0, limit);
+  }
+
+  async listRoomAvailability(
+    businessId: string,
+    from: string,
+    to: string,
+  ): Promise<RoomAvailability[]> {
+    return this.roomAvailability.filter(
+      (row) => row.business_id === businessId && row.date >= from && row.date < to,
+    );
+  }
+
+  async listBookings(businessId: string, from: string, to: string): Promise<Booking[]> {
+    return this.bookings.filter(
+      (booking) =>
+        booking.business_id === businessId &&
+        booking.status === 'confirmed' &&
+        booking.check_in < to &&
+        booking.check_out > from,
+    );
+  }
+
+  async createBooking(input: CreateBookingInput): Promise<Booking> {
+    const booking: Booking = {
+      id: randomUUID(),
+      business_id: input.businessId,
+      lead_id: input.leadId ?? null,
+      customer_id: input.customerId,
+      room_id: input.roomId,
+      check_in: input.checkIn,
+      check_out: input.checkOut,
+      units: input.units ?? 1,
+      guests: input.guests ?? null,
+      status: 'confirmed',
+      total_value: input.totalValue ?? null,
+      notes: input.notes ?? null,
+      created_by: input.createdBy ?? null,
+      created_at: this.now(),
+      updated_at: this.now(),
+    };
+    this.bookings.push(booking);
+    return booking;
   }
 
   async insertAiAction(input: InsertAiActionInput): Promise<AiAction> {

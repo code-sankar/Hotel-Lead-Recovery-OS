@@ -92,6 +92,7 @@ const MATCHERS: Matcher[] = [
       /\bdo you have\b.*\brooms?\b/i,
       /\bvacancy\b/i,
       /\bcan i (get|have)\b.*\brooms?\b/i,
+      /\brooms?\s+for\b/i,
     ],
   },
   {

@@ -8,6 +8,7 @@ import type { Capability } from '@/lib/auth/permissions';
 const ITEMS: Array<{ href: string; label: string; capability?: Capability }> = [
   { href: '/settings/hotel', label: 'Hotel', capability: 'hotel_content:manage' },
   { href: '/settings/rooms', label: 'Rooms', capability: 'hotel_content:manage' },
+  { href: '/settings/availability', label: 'Availability', capability: 'availability:manage' },
   { href: '/settings/policies', label: 'Policies', capability: 'hotel_content:manage' },
   { href: '/settings/faqs', label: 'FAQs', capability: 'hotel_content:manage' },
   { href: '/settings/ai', label: 'Assistant', capability: 'business:manage' },

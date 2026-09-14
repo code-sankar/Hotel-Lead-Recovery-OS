@@ -1,6 +1,7 @@
 import type {
   AiAction,
   AnalyticsEvent,
+  Booking,
   Business,
   BusinessSettings,
   Conversation,
@@ -10,6 +11,7 @@ import type {
   Lead,
   LeadEvent,
   Message,
+  RoomAvailability,
   WhatsAppIntegrationSecrets,
   WhatsAppTemplate,
 } from '@/types/domain';
@@ -72,6 +74,13 @@ export interface Store {
   cancelScheduledFollowUps(businessId: string, leadId: string, reason: string): Promise<FollowUp[]>;
   /** Cross-tenant sweep used by the worker; each row carries its own business_id. */
   listDueFollowUps(now: Date, limit?: number): Promise<FollowUp[]>;
+
+  // --- availability --------------------------------------------------------
+  /** Per-date overrides touching [from, to). */
+  listRoomAvailability(businessId: string, from: string, to: string): Promise<RoomAvailability[]>;
+  /** Confirmed bookings overlapping [from, to). */
+  listBookings(businessId: string, from: string, to: string): Promise<Booking[]>;
+  createBooking(input: CreateBookingInput): Promise<Booking>;
 
   // --- telemetry -----------------------------------------------------------
   insertAiAction(input: InsertAiActionInput): Promise<AiAction>;
@@ -140,6 +149,20 @@ export interface CreateFollowUpInput {
   body: string | null;
   dedupeKey: string;
   createdBy?: string;
+}
+
+export interface CreateBookingInput {
+  businessId: string;
+  leadId?: string | null;
+  customerId: string;
+  roomId: string;
+  checkIn: string;
+  checkOut: string;
+  units?: number;
+  guests?: number | null;
+  totalValue?: number | null;
+  notes?: string | null;
+  createdBy?: string | null;
 }
 
 export interface InsertAiActionInput {

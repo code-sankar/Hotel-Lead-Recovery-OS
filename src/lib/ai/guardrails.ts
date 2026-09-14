@@ -1,4 +1,5 @@
 import type { HotelKnowledge } from '@/lib/knowledge/types';
+import { extractEntities } from './entities';
 
 /**
  * Post-generation validation.
@@ -8,13 +9,25 @@ import type { HotelKnowledge } from '@/lib/knowledge/types';
  * payments, discounts, prices or room names is verified against the trusted
  * hotel snapshot before it is allowed to reach a customer.
  *
+ * Availability is the one claim whose rule changed when real inventory arrived.
+ * It is no longer forbidden — it is VERIFIED. A positive availability claim is
+ * allowed only when the application itself looked the dates up and the numbers
+ * agree. With no lookup, or a lookup that disagrees, the claim is still blocked,
+ * so the failure mode of a hotel that has not configured inventory is the old,
+ * safe behaviour rather than a guess.
+ *
  * A blocked reply is never silently "fixed" into a different factual claim —
  * it is replaced by the hotel's escalation message and the conversation is
  * flagged for a human.
  */
 
 export type GuardrailFlag =
-  | 'claimed_availability'
+  /** Said a room is free without a verified lookup for those dates. */
+  | 'unverified_availability'
+  /** Said a room is free when the verified numbers say it is not. */
+  | 'contradicts_availability'
+  /** Said the hotel is full when the verified numbers say it is not. */
+  | 'wrong_sold_out'
   | 'claimed_booking'
   | 'claimed_payment'
   | 'invented_discount'
@@ -22,6 +35,18 @@ export type GuardrailFlag =
   | 'invented_room'
   | 'empty_reply'
   | 'too_long';
+
+/**
+ * The result of an availability lookup the application performed for this turn.
+ * Absent means no lookup happened, which is treated as "not verified".
+ */
+export interface AvailabilityContext {
+  checkIn: string;
+  checkOut: string;
+  anyAvailable: boolean;
+  availableRoomNames: string[];
+  soldOutRoomNames: string[];
+}
 
 export interface GuardrailResult {
   ok: boolean;
@@ -42,6 +67,11 @@ const AVAILABILITY_CLAIM = [
   /\b(?:rooms?|suites?)\b[^.!?]{0,40}\b(?:is|are|remains?)\s+(?:available|free|vacant)\b/i,
   /\bi(?:'ve| have)\s+(?:blocked|held|reserved|kept)\b/i,
   /\b(?:it|that|this)\s+is\s+available\b/i,
+];
+
+const SOLD_OUT_CLAIM = [
+  /\b(?:fully booked|sold out|no (?:rooms?|availability)|nothing (?:available|free)|we are full|fully occupied)\b/i,
+  /\b(?:rooms?|suites?)\b[^.!?]{0,30}\b(?:not available|unavailable)\b/i,
 ];
 
 const BOOKING_CLAIM = [
@@ -68,6 +98,18 @@ function sentences(text: string): string[] {
   return text
     .split(/(?<=[.!?\n])\s+/)
     .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Sentences split further on clause joiners, so "the Deluxe is free but the
+ * Suite is fully booked" is judged as two separate claims rather than one
+ * contradictory whole.
+ */
+function clauses(text: string): string[] {
+  return sentences(text)
+    .flatMap((sentence) => sentence.split(/(?:,?\s+\bbut\b\s+|;\s*|\s+\bhowever\b\s*,?\s*)/i))
+    .map((clause) => clause.trim())
     .filter(Boolean);
 }
 
@@ -121,6 +163,10 @@ function allowedMoneyValues(knowledge: HotelKnowledge, extraContext: string[]): 
   return allowed;
 }
 
+const DETERMINERS = new Set([
+  'the', 'a', 'an', 'our', 'your', 'my', 'this', 'that', 'these', 'those', 'one', 'any', 'each',
+]);
+
 function invalidRoomNames(text: string, knowledge: HotelKnowledge): string[] {
   const known = knowledge.rooms.map((room) => room.name.toLowerCase().trim());
   // Words that appear in a configured room name, so "Deluxe" is recognised even
@@ -129,12 +175,16 @@ function invalidRoomNames(text: string, knowledge: HotelKnowledge): string[] {
   const invalid: string[] = [];
   for (const match of text.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(Room|Suite)\b/g)) {
     const type = (match[2] ?? '').toLowerCase();
-    const qualifierWords = (match[1] ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+    // "The Suite" names the room type "Suite"; the article is not part of it.
+    const qualifierWords = (match[1] ?? '')
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((word) => word && !DETERMINERS.has(word));
     const lastWord = qualifierWords.at(-1) ?? '';
     const candidate = `${qualifierWords.join(' ')} ${type}`.trim();
     const isKnown =
       known.includes(candidate) ||
-      known.includes(`${lastWord} ${type}`) ||
+      (lastWord !== '' && known.includes(`${lastWord} ${type}`)) ||
       qualifierWords.some((word) => knownWords.has(word));
     if (!isKnown) invalid.push(`${match[1]} ${match[2]}`);
   }
@@ -146,6 +196,83 @@ export interface GuardrailInput {
   knowledge: HotelKnowledge;
   /** Prior conversation text, so a price the customer quoted is not "invented". */
   conversationContext?: string[];
+  /**
+   * The lookup the application ran for this turn. Omit it and every positive
+   * availability claim is blocked, which is the correct default.
+   */
+  availability?: AvailabilityContext | null;
+}
+
+/**
+ * Checks availability statements against the verified numbers.
+ *
+ * Judged per clause, so a reply may truthfully say one room is free and another
+ * is not. Hedged statements ("I'll confirm with the team") are always allowed —
+ * deferring to a human is never a false claim.
+ */
+function checkAvailabilityClaims(
+  reply: string,
+  knowledge: HotelKnowledge,
+  availability: AvailabilityContext | null | undefined,
+): { flags: GuardrailFlag[]; details: string[] } {
+  const flags: GuardrailFlag[] = [];
+  const details: string[] = [];
+
+  const roomNames = knowledge.rooms.map((room) => room.name);
+  const availableSet = new Set((availability?.availableRoomNames ?? []).map((n) => n.toLowerCase()));
+
+  const mentionedRooms = (clause: string) =>
+    roomNames.filter((name) => clause.toLowerCase().includes(name.toLowerCase()));
+
+  for (const clause of clauses(reply)) {
+    if (HEDGE.test(clause)) continue;
+
+    const claimsAvailable = AVAILABILITY_CLAIM.some((pattern) => pattern.test(clause));
+    const claimsSoldOut = SOLD_OUT_CLAIM.some((pattern) => pattern.test(clause));
+
+    if (claimsAvailable) {
+      if (!availability) {
+        flags.push('unverified_availability');
+        details.push(`said a room is available with no verified lookup: "${clause}"`);
+        continue;
+      }
+      if (!availability.anyAvailable) {
+        flags.push('contradicts_availability');
+        details.push(`said a room is available, but nothing is free for ${availability.checkIn} to ${availability.checkOut}`);
+        continue;
+      }
+      const named = mentionedRooms(clause);
+      const wrong = named.filter((name) => !availableSet.has(name.toLowerCase()));
+      if (wrong.length > 0) {
+        flags.push('contradicts_availability');
+        details.push(`said ${wrong.join(', ')} is available, but it is not free for those dates`);
+        continue;
+      }
+      // A claim about dates the application did not check is not verified.
+      const claimedDate = extractEntities(clause).checkIn;
+      if (claimedDate && (claimedDate < availability.checkIn || claimedDate >= availability.checkOut)) {
+        flags.push('unverified_availability');
+        details.push(`claimed availability for ${claimedDate}, which is outside the checked range ${availability.checkIn}–${availability.checkOut}`);
+      }
+      continue;
+    }
+
+    if (claimsSoldOut && availability) {
+      const named = mentionedRooms(clause);
+      // Wrongly telling a guest the hotel is full loses the booking outright,
+      // so it is treated as seriously as inventing availability.
+      const wronglyFull = named.filter((name) => availableSet.has(name.toLowerCase()));
+      if (wronglyFull.length > 0) {
+        flags.push('wrong_sold_out');
+        details.push(`said ${wronglyFull.join(', ')} is unavailable, but it is free for those dates`);
+      } else if (named.length === 0 && availability.anyAvailable) {
+        flags.push('wrong_sold_out');
+        details.push('said the hotel is full, but rooms are free for those dates');
+      }
+    }
+  }
+
+  return { flags: [...new Set(flags)], details };
 }
 
 export function checkReply(input: GuardrailInput): { flags: GuardrailFlag[]; details: string[] } {
@@ -162,10 +289,10 @@ export function checkReply(input: GuardrailInput): { flags: GuardrailFlag[]; det
     details.push(`reply is ${reply.length} characters`);
   }
 
-  if (matchesUnhedged(reply, AVAILABILITY_CLAIM)) {
-    flags.push('claimed_availability');
-    details.push('stated a room is available without deferring to the hotel team');
-  }
+  const availabilityCheck = checkAvailabilityClaims(reply, knowledge, input.availability);
+  flags.push(...availabilityCheck.flags);
+  details.push(...availabilityCheck.details);
+
   if (matchesUnhedged(reply, BOOKING_CLAIM)) {
     flags.push('claimed_booking');
     details.push('claimed a booking exists');
@@ -197,7 +324,9 @@ export function checkReply(input: GuardrailInput): { flags: GuardrailFlag[]; det
 
 /** Hard violations block the message; soft ones are recorded only. */
 const BLOCKING_FLAGS: readonly GuardrailFlag[] = [
-  'claimed_availability',
+  'unverified_availability',
+  'contradicts_availability',
+  'wrong_sold_out',
   'claimed_booking',
   'claimed_payment',
   'invented_discount',

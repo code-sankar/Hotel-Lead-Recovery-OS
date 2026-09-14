@@ -168,6 +168,7 @@ export async function seedHotelContent(
           description: room.description,
           base_price: room.basePrice,
           max_guests: room.maxGuests,
+          total_units: room.totalUnits,
           amenities: room.amenities,
           breakfast_included: room.breakfastIncluded,
           notes: room.notes,
@@ -415,6 +416,96 @@ export async function seedDemoConversations(
   return { customers, conversations, followUpsSent, conversions };
 }
 
+function isoDaysFromNow(days: number, now: Date): string {
+  return new Date(now.getTime() + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Gives the demo hotel a realistic inventory picture: mostly open, one room
+ * type sold out over a weekend, and a maintenance closure. Without this the
+ * demo would only ever show "plenty free", which is the easy case.
+ */
+export async function seedDemoAvailability(
+  client: SupabaseClient,
+  businessId: string,
+  now: Date = new Date(),
+): Promise<{ overrides: number; bookings: number }> {
+  const { data: roomRows } = await client
+    .from('rooms')
+    .select('id, name, total_units')
+    .eq('business_id', businessId)
+    .eq('active', true);
+
+  const rooms = (roomRows ?? []) as Array<{ id: string; name: string; total_units: number }>;
+  if (rooms.length === 0) return { overrides: 0, bookings: 0 };
+
+  const suite = rooms.find((room) => room.name.toLowerCase().includes('suite'));
+  const deluxe = rooms.find((room) => room.name.toLowerCase().includes('deluxe'));
+
+  const overrides: Array<Record<string, unknown>> = [];
+
+  // The whole hotel is closed for one day of maintenance next week.
+  const maintenance = isoDaysFromNow(9, now);
+  for (const room of rooms) {
+    overrides.push({
+      business_id: businessId,
+      room_id: room.id,
+      date: maintenance,
+      closed: true,
+      units_available: null,
+      note: 'Annual maintenance',
+    });
+  }
+
+  // The Deluxe allotment is trimmed over a busy weekend.
+  if (deluxe) {
+    for (const offset of [5, 6]) {
+      overrides.push({
+        business_id: businessId,
+        room_id: deluxe.id,
+        date: isoDaysFromNow(offset, now),
+        closed: false,
+        units_available: 3,
+        note: 'Block held for a tour group',
+      });
+    }
+  }
+
+  if (overrides.length > 0) {
+    await client
+      .from('room_availability')
+      .upsert(overrides, { onConflict: 'business_id,room_id,date' });
+  }
+
+  // One confirmed stay takes the Suite out entirely for two nights, so the demo
+  // shows a genuine sold-out answer rather than only the happy path.
+  let bookings = 0;
+  if (suite) {
+    const { data: customer } = await client
+      .from('customers')
+      .select('id')
+      .eq('business_id', businessId)
+      .limit(1)
+      .maybeSingle();
+
+    if (customer) {
+      const { error } = await client.from('bookings').insert({
+        business_id: businessId,
+        customer_id: (customer as { id: string }).id,
+        room_id: suite.id,
+        check_in: isoDaysFromNow(3, now),
+        check_out: isoDaysFromNow(5, now),
+        units: suite.total_units,
+        total_value: 11_000,
+        notes: 'Demo booking — blocks the Suite so availability shows a sold-out case.',
+      });
+      if (!error) bookings = 1;
+    }
+  }
+
+  return { overrides: overrides.length, bookings };
+}
+
 export async function seedDemoBusiness(
   client: SupabaseClient,
   businessId: string,
@@ -422,6 +513,9 @@ export async function seedDemoBusiness(
 ): Promise<SeedResult> {
   const hotelContent = await seedHotelContent(client, businessId);
   const rest = await seedDemoConversations(client, businessId, options);
+  // Seeded after the conversations, so a customer exists to attach the demo
+  // booking to.
+  await seedDemoAvailability(client, businessId, options.now ?? new Date());
   return { hotelContent, ...rest };
 }
 

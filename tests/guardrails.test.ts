@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { checkReply, enforceGuardrails, extractMoneyValues } from '@/lib/ai/guardrails';
+import {
+  checkReply,
+  enforceGuardrails,
+  extractMoneyValues,
+  type AvailabilityContext,
+} from '@/lib/ai/guardrails';
 import type { HotelKnowledge } from '@/lib/knowledge/types';
 import { MemoryStore } from './support/memory-store';
 import { seedBusiness } from './support/fixtures';
@@ -24,13 +29,21 @@ describe('extractMoneyValues', () => {
   });
 });
 
-describe('guardrails — availability', () => {
-  it('blocks a definite availability claim', () => {
+const VERIFIED: AvailabilityContext = {
+  checkIn: '2026-09-15',
+  checkOut: '2026-09-17',
+  anyAvailable: true,
+  availableRoomNames: ['Deluxe Room', 'Executive Room'],
+  soldOutRoomNames: ['Suite'],
+};
+
+describe('guardrails — availability without a verified lookup', () => {
+  it('blocks a definite availability claim when nothing was checked', () => {
     const result = checkReply({
       reply: 'Yes, we have a Deluxe Room available for 15 September.',
       knowledge: knowledge(),
     });
-    expect(result.flags).toContain('claimed_availability');
+    expect(result.flags).toContain('unverified_availability');
   });
 
   it('allows the same answer when it defers to the hotel team', () => {
@@ -39,7 +52,6 @@ describe('guardrails — availability', () => {
         'Our Deluxe Room sleeps 2 at ₹2,800 per night. I will need the hotel team to confirm availability for your dates.',
       knowledge: knowledge(),
     });
-    expect(result.flags).not.toContain('claimed_availability');
     expect(result.flags).toHaveLength(0);
   });
 
@@ -48,7 +60,99 @@ describe('guardrails — availability', () => {
       reply: 'I have blocked the Suite for you.',
       knowledge: knowledge(),
     });
-    expect(result.flags).toContain('claimed_availability');
+    expect(result.flags).toContain('unverified_availability');
+  });
+});
+
+describe('guardrails — availability with a verified lookup', () => {
+  it('allows a claim the inventory supports', () => {
+    const result = checkReply({
+      reply: 'Yes, the Deluxe Room is available for 15 September at ₹2,800 per night.',
+      knowledge: knowledge(),
+      availability: VERIFIED,
+    });
+    expect(result.flags).toHaveLength(0);
+  });
+
+  it('blocks a claim about a room that is sold out', () => {
+    const result = checkReply({
+      reply: 'Yes, the Suite is available for those dates.',
+      knowledge: knowledge(),
+      availability: VERIFIED,
+    });
+    expect(result.flags).toContain('contradicts_availability');
+  });
+
+  it('blocks any availability claim when the whole hotel is full', () => {
+    const result = checkReply({
+      reply: 'Yes, we have rooms available.',
+      knowledge: knowledge(),
+      availability: { ...VERIFIED, anyAvailable: false, availableRoomNames: [], soldOutRoomNames: ['Deluxe Room'] },
+    });
+    expect(result.flags).toContain('contradicts_availability');
+  });
+
+  it('allows a truthful mix of free and full rooms in one sentence', () => {
+    const result = checkReply({
+      reply: 'The Deluxe Room is available, but the Suite is fully booked for those dates.',
+      knowledge: knowledge(),
+      availability: VERIFIED,
+    });
+    expect(result.flags).toHaveLength(0);
+  });
+
+  it('blocks a claim about dates that were never checked', () => {
+    const result = checkReply({
+      reply: 'Yes, we have a Deluxe Room available on 25 December.',
+      knowledge: knowledge(),
+      availability: VERIFIED,
+    });
+    expect(result.flags).toContain('unverified_availability');
+  });
+
+  it('blocks wrongly telling a guest the hotel is full', () => {
+    const result = checkReply({
+      reply: 'Sorry, we are fully booked for those dates.',
+      knowledge: knowledge(),
+      availability: VERIFIED,
+    });
+    expect(result.flags).toContain('wrong_sold_out');
+  });
+
+  it('blocks wrongly calling one free room unavailable', () => {
+    const result = checkReply({
+      reply: 'The Deluxe Room is not available for those dates.',
+      knowledge: knowledge(),
+      availability: VERIFIED,
+    });
+    expect(result.flags).toContain('wrong_sold_out');
+  });
+
+  it('allows a truthful sold-out answer', () => {
+    const result = checkReply({
+      reply: 'The Suite is fully booked for those dates.',
+      knowledge: knowledge(),
+      availability: VERIFIED,
+    });
+    expect(result.flags).toHaveLength(0);
+  });
+
+  it('allows a truthful sold-out answer when the hotel really is full', () => {
+    const result = checkReply({
+      reply: 'Sorry, we are fully booked for those dates.',
+      knowledge: knowledge(),
+      availability: { ...VERIFIED, anyAvailable: false, availableRoomNames: [], soldOutRoomNames: ['Deluxe Room'] },
+    });
+    expect(result.flags).toHaveLength(0);
+  });
+
+  it('still refuses to claim a booking exists', () => {
+    const result = checkReply({
+      reply: 'The Deluxe Room is available and your booking is confirmed.',
+      knowledge: knowledge(),
+      availability: VERIFIED,
+    });
+    expect(result.flags).toContain('claimed_booking');
   });
 });
 

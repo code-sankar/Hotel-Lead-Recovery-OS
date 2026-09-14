@@ -1,5 +1,6 @@
 import type { LeadIntent, LeadStatus, LeadTemperature } from '@/types/domain';
 import type { HotelKnowledge } from '@/lib/knowledge/types';
+import type { AvailabilitySnapshot } from '@/lib/availability/calculate';
 import type { BookingEntities } from './entities';
 
 export interface ConversationTurn {
@@ -66,6 +67,12 @@ export interface ReplyInput {
   analysis: AiAnalysis;
   leadState: LeadStateSummary;
   customerName?: string | null;
+  /**
+   * Availability the application verified for this turn's dates, or null when
+   * no dates are known. Null means the assistant must still defer availability
+   * to staff — it is never licence to guess.
+   */
+  availability?: AvailabilitySnapshot | null;
 }
 
 /**

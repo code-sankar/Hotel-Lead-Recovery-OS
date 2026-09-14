@@ -42,6 +42,7 @@ Guest on WhatsApp
              └─ customer + conversation + message stored          (idempotent)
                   └─ intent + booking entities extracted
                        └─ lead created and scored                  (deterministic)
+                            └─ availability verified for those dates
                             └─ reply generated from hotel data
                                  └─ guardrails verify every claim
                                       └─ sent, recorded, follow-up scheduled
@@ -55,9 +56,11 @@ Five design commitments run through the whole codebase:
 1. **Facts come from the database, not the model.** Prices, policies, room types
    and FAQs are structured records. The model writes sentences; it never decides
    what is true.
-2. **Availability is never claimed.** There is no room inventory in this MVP, so
-   the assistant always defers availability to the hotel team — and a reply that
-   breaks that rule is blocked before it is sent, not just discouraged in a prompt.
+2. **Availability is verified, never asserted.** The app looks the guest's dates
+   up in the hotel's own inventory before a word is written, and the assistant may
+   only say a room is free when those numbers say so — or say the hotel is full
+   when they say that. A reply that goes beyond what was verified is blocked
+   before it is sent, not just discouraged in a prompt.
 3. **Human override is absolute.** While a conversation is in `human` or `paused`
    mode, the assistant sends nothing.
 4. **Every tenant is isolated in the database.** Row Level Security, not
@@ -81,6 +84,7 @@ src/
       cron/follow-ups/     scheduled sweep for deployments without a worker
   lib/
     ai/                intent · entities · prompts · guardrails · OpenAI + rule-based providers
+    availability/      pure inventory arithmetic · lookup service · editing actions
     analytics/         dashboard metrics and revenue attribution
     auth/              session, roles, capabilities
     conversations/     staff actions (send, take over, convert, assign, note)
@@ -274,8 +278,9 @@ messages are stored with `delivery_status = 'simulated'` and rendered with a
 
 A complete demo run:
 
-1. Simulate `Hi, room available for 15 Sept?` → the assistant answers with real
-   room rates and defers availability. A lead appears, scored 35 (cold).
+1. Simulate `Hi, room available for 15 Sept?` → the assistant checks the date in
+   your inventory and answers with the room types that are actually free, at your
+   real rates. A lead appears, scored 35 (cold).
 2. Simulate `2` → guests recorded, score 50 (warm).
 3. Rewind 25 hours, then run the follow-up engine → a follow-up is sent.
 4. Simulate `Yes, book it` → score jumps to hot, the pending follow-up is cancelled.
@@ -293,7 +298,7 @@ npm run lint
 npm test
 ```
 
-169 tests across 11 files:
+223 tests across 13 files:
 
 | File | Covers |
 | --- | --- |
@@ -308,6 +313,8 @@ npm test
 | `permissions.test.ts` | Role capability boundaries |
 | `validation.test.ts` | Zod schemas for hotel data and action inputs |
 | `reply-engine.test.ts` | Reply behaviour, escalation, FAQ matching, the model tool surface |
+| `availability.test.ts` | Inventory arithmetic: bookings, closures, allotments, changeover days |
+| `user-store.test.ts` | The session-scoped read store used by availability pages |
 
 The integration suite (`tests/pipeline.test.ts`) runs the real inbound pipeline
 and follow-up engine against an in-memory `Store`, covering: enquiry → lead →
@@ -334,9 +341,14 @@ Set `DEMO_MODE_ENABLED=false` in production once you are live.
 
 These are deliberate MVP boundaries, not oversights:
 
-- **No room inventory.** The system genuinely does not know whether a room is free,
-  and says so. Adding real availability is the single biggest unlock.
-- **No booking or payment.** Staff confirm bookings and record revenue by hand.
+- **Availability is an allotment count, not a room chart.** The system tracks how
+  many rooms of each type are free per night, not which physical room a guest is
+  in. That is the right level for a WhatsApp enquiry; it is not a PMS.
+- **No channel sync.** If you also sell on an OTA, those bookings are not visible
+  here unless someone records them, so the counts can drift.
+- **No alternative-date search.** When the requested dates are full the assistant
+  says so and offers to check other dates; it does not go looking on its own.
+- **No payment.** Staff record revenue by hand; the assistant never takes money.
 - **Staff invitations are manual.** Add a `business_members` row in Supabase; there
   is no invitation email flow yet.
 - **English-first.** Romanised Hindi/Hinglish enquiries are understood
@@ -354,7 +366,8 @@ These are deliberate MVP boundaries, not oversights:
 
 Deliberately out of scope for this MVP, in rough order of value:
 
-Room inventory and true availability · payment links (Razorpay) · direct booking ·
+Alternative-date suggestions · OTA/channel sync so counts cannot drift ·
+payment links (Razorpay) · direct booking ·
 multilingual replies · website and Instagram lead capture · Google Business
 Messages · OTA/channel-manager integrations · campaign broadcasts · staff
 performance analytics · a data-driven replacement for the heuristic lead score.

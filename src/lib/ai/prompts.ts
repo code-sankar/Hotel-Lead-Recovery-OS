@@ -1,5 +1,6 @@
 import type { HotelKnowledge } from '@/lib/knowledge/types';
 import { formatKnowledgeForPrompt } from '@/lib/knowledge/format';
+import type { AvailabilitySnapshot } from '@/lib/availability/calculate';
 import type { ConversationTurn, LeadStateSummary } from './types';
 
 /**
@@ -15,7 +16,7 @@ Answer the guest's question using only the hotel information given to you, colle
 
 HARD RULES — these are checked automatically before anything you write is sent:
 1. Use only the hotel information provided below. If a fact is not there, say a team member will confirm it.
-2. Never state or imply that a room IS available on a date. This system has no live inventory. Always say availability will be confirmed by the hotel team.
+2. Only state that a room is available when the AVAILABILITY section below gives you verified numbers for exactly those dates, and only for the room types it lists as free. If that section is absent, says nothing was checked, or covers different dates, say the hotel team will confirm availability. Never guess, and never claim a room is full when the numbers say it is free.
 3. Never say a booking has been made, held, blocked or confirmed.
 4. Never say a payment has been received or confirmed.
 5. Never offer a discount, special rate, upgrade or anything complimentary.
@@ -72,4 +73,47 @@ export function formatLeadStateForPrompt(state: LeadStateSummary): string {
   return known.length
     ? `Already known about this enquiry: ${known.join(', ')}. Do not ask for these again.`
     : 'Nothing is known about dates or guest count yet.';
+}
+
+/**
+ * Renders the verified availability for this turn. Absent or zero-night
+ * snapshots are stated as "not checked", so the model is never left to infer
+ * availability from silence.
+ */
+export function formatAvailabilityForPrompt(
+  snapshot: AvailabilitySnapshot | null | undefined,
+  currency: string,
+): string {
+  if (!snapshot || snapshot.nights === 0) {
+    return [
+      '## AVAILABILITY',
+      'No dates have been checked for this enquiry. You do not know what is free. Ask for dates, or say the hotel team will confirm availability.',
+    ].join('\n');
+  }
+
+  const lines = [
+    '## AVAILABILITY (verified from the hotel\'s own inventory — you may state these)',
+    `Checked ${snapshot.checkIn} to ${snapshot.checkOut} (${snapshot.nights} night${snapshot.nights === 1 ? '' : 's'})${snapshot.guests ? ` for ${snapshot.guests} guest(s)` : ''}.`,
+  ];
+
+  if (snapshot.rooms.length === 0) {
+    lines.push('No room type can take this party.');
+    return lines.join('\n');
+  }
+
+  for (const room of snapshot.rooms) {
+    lines.push(
+      room.available
+        ? `- ${room.roomName}: ${room.unitsFree} room(s) free at ${currency === 'INR' ? '₹' : `${currency} `}${room.basePrice} per night.`
+        : `- ${room.roomName}: fully booked${room.soldOutDates.length ? ` (no space on ${room.soldOutDates.join(', ')})` : ''}.`,
+    );
+  }
+
+  if (!snapshot.anyAvailable) {
+    lines.push(
+      'Nothing is free for these dates. Say so honestly, offer to check other dates, and do not invent an alternative.',
+    );
+  }
+
+  return lines.join('\n');
 }

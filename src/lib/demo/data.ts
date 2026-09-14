@@ -47,6 +47,7 @@ export interface DemoRoom {
   breakfastIncluded: boolean;
   notes: string | null;
   sortOrder: number;
+  totalUnits: number;
 }
 
 export const DEMO_ROOMS: DemoRoom[] = [
@@ -59,6 +60,7 @@ export const DEMO_ROOMS: DemoRoom[] = [
     breakfastIncluded: true,
     notes: 'Extra bed available on request at an additional charge.',
     sortOrder: 1,
+    totalUnits: 12,
   },
   {
     name: 'Executive Room',
@@ -76,6 +78,7 @@ export const DEMO_ROOMS: DemoRoom[] = [
     breakfastIncluded: true,
     notes: 'Preferred by business travellers; early check-in subject to availability.',
     sortOrder: 2,
+    totalUnits: 8,
   },
   {
     name: 'Suite',
@@ -93,6 +96,7 @@ export const DEMO_ROOMS: DemoRoom[] = [
     breakfastIncluded: true,
     notes: 'Suitable for families; one extra bed can be added.',
     sortOrder: 3,
+    totalUnits: 4,
   },
 ];
 

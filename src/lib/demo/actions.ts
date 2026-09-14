@@ -181,12 +181,16 @@ export async function resetDemoDataAction(formData: FormData): Promise<DemoResul
 
     const client = createServiceSupabase();
     // Ordered by dependency; customers cascade to conversations, messages and leads.
-    for (const table of ['analytics_events', 'ai_actions', 'staff_notes', 'follow_ups', 'lead_events', 'leads', 'messages', 'conversations', 'customers']) {
+    for (const table of ['analytics_events', 'ai_actions', 'staff_notes', 'bookings', 'follow_ups', 'lead_events', 'leads', 'messages', 'conversations', 'customers']) {
       await client.from(table).delete().eq('business_id', businessId);
     }
 
     revalidateAll();
-    return { ok: true, message: 'All conversations, leads and follow-ups for this hotel were deleted.' };
+    return {
+      ok: true,
+      message:
+        'All conversations, leads, follow-ups and bookings for this hotel were deleted. Room types and availability overrides were kept.',
+    };
   } catch (error) {
     return fail(error);
   }

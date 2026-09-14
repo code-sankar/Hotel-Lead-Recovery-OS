@@ -9,6 +9,7 @@ Migrations, applied in order:
 2. `20250101000100_functions.sql` — helpers, triggers, provisioning RPCs, the
    non-secret WhatsApp view
 3. `20250101000200_rls_policies.sql` — Row Level Security
+4. `20250201000000_room_availability.sql` — inventory, overrides, bookings
 
 ## Tenancy
 
@@ -40,7 +41,9 @@ optional `business_id`, because an event may arrive before a tenant is resolved.
 | `businesses` | One hotel = one tenant | `messaging_mode` (`demo`/`live`), `is_demo`, `timezone`, `currency` |
 | `business_members` | Membership + role | Unique `(business_id, user_id)` |
 | `business_profiles` | Description, times, amenities, hours | 1:1 with the hotel |
-| `rooms` | Bookable room types | `base_price >= 0`, `max_guests > 0` — the only prices the AI may quote |
+| `rooms` | Bookable room types | `base_price >= 0`, `max_guests > 0`, `total_units >= 0` — the only prices the AI may quote |
+| `room_availability` | Per-date **overrides** only: closed, or a different room count | Unique `(business_id, room_id, date)` |
+| `bookings` | Confirmed stays, which consume inventory | `check_out > check_in`, `units > 0`; only staff create these |
 | `hotel_policies` | Cancellation, payment, pets… | Typed enum |
 | `hotel_faqs` | Question/answer pairs | Ordered |
 | `business_settings` | Assistant + follow-up switches | `max_follow_ups` between 0 and 5 |
@@ -89,7 +92,8 @@ public.has_business_role(business_id, member_role[]) → boolean
 | `businesses` | any member | owner |
 | `business_members` | self or any member | owner |
 | `follow_up_rules` | any member | owner, manager |
-| Operational (`customers`, `conversations`, `messages`, `leads`, `lead_events`, `staff_notes`, `follow_ups`) | any member | any member |
+| Operational (`customers`, `conversations`, `messages`, `leads`, `lead_events`, `staff_notes`, `follow_ups`, `bookings`) | any member | any member |
+| `room_availability` | any member | owner, manager |
 | Telemetry (`ai_actions`, `analytics_events`) | any member | service role only |
 | `whatsapp_integrations` | **nobody** (no policies) | service role only |
 | `webhook_events` | **nobody** | service role only |
@@ -105,3 +109,25 @@ RPC that, in one transaction, creates the hotel, registers the caller as owner,
 creates the profile/settings/integration rows, and seeds the two default
 follow-up rules plus the default WhatsApp template identifiers. This avoids the
 chicken-and-egg problem of inserting a business you are not yet a member of.
+
+## Availability
+
+Availability is **computed, never stored**. For one room on one night:
+
+```
+units = closed ? 0 : (override.units_available ?? rooms.total_units)
+free  = max(0, units - units booked that night)
+```
+
+A stay occupies the nights `[check_in, check_out)` — the checkout date is not a
+night, so two stays may share a changeover day.
+
+Storing only *overrides* means a hotel never has to fill in a calendar to get
+correct answers: they record the exceptions (a closure, a reduced allotment) and
+everything else falls back to the room type's own count. A hotel that has set
+nothing reports `total_units` minus bookings, and a room type with zero units
+reads as sold out rather than unlimited.
+
+The arithmetic lives in `src/lib/availability/calculate.ts`, which is pure and
+carries its own test file, because it is the factual basis for the one claim the
+assistant used to be forbidden from making.

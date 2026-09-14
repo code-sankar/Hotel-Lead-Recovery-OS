@@ -226,6 +226,121 @@ describe('inbound pipeline', () => {
   });
 });
 
+describe('availability', () => {
+  it('answers with real numbers once dates are known, and the guardrails accept it', async () => {
+    const store = new MemoryStore();
+    const { business } = seedBusiness(store);
+    const deps = makeDeps(store);
+
+    const result = await processInboundMessage(deps, {
+      businessId: business.id,
+      phoneNumber: PHONE,
+      text: 'Do you have a room for 15 Sept for 2 people?',
+      providerMessageId: 'wamid.av1',
+      now: new Date('2026-09-07T10:00:00Z'),
+    });
+
+    expect(result.outcome).toBe('processed');
+    expect(result.guardrailFlags).toEqual([]);
+
+    const reply = result.replyText ?? '';
+    // Demo hotel has 12 Deluxe rooms and nothing booked.
+    expect(reply).toContain('12 rooms free');
+    expect(reply).toContain('2026-09-15');
+    // It no longer defers a question it can actually answer.
+    expect(reply).not.toContain('do not have the live room chart');
+  });
+
+  it('says plainly that it is fully booked rather than inventing space', async () => {
+    const store = new MemoryStore();
+    const { business, knowledge } = seedBusiness(store);
+    const deps = makeDeps(store);
+    const customer = await store.findOrCreateCustomer({
+      businessId: business.id,
+      phoneNumber: '919000009999',
+    });
+
+    // Book out every unit of every room type for the night in question.
+    for (const room of knowledge.rooms) {
+      await store.createBooking({
+        businessId: business.id,
+        customerId: customer.id,
+        roomId: room.id,
+        checkIn: '2026-09-15',
+        checkOut: '2026-09-16',
+        units: room.totalUnits,
+      });
+    }
+
+    const result = await processInboundMessage(deps, {
+      businessId: business.id,
+      phoneNumber: PHONE,
+      text: 'Any room available on 15 Sept?',
+      providerMessageId: 'wamid.av2',
+      now: new Date('2026-09-07T10:00:00Z'),
+    });
+
+    expect(result.guardrailFlags).toEqual([]);
+    expect(result.replyText?.toLowerCase()).toContain('fully booked');
+    expect(result.replyText).not.toMatch(/\d+ rooms? free/);
+  });
+
+  it('still defers availability when no dates are known', async () => {
+    const store = new MemoryStore();
+    const { business } = seedBusiness(store);
+    const deps = makeDeps(store);
+
+    const result = await processInboundMessage(deps, {
+      businessId: business.id,
+      phoneNumber: PHONE,
+      text: 'Do you have any rooms?',
+      providerMessageId: 'wamid.av3',
+      now: new Date('2026-09-07T10:00:00Z'),
+    });
+
+    expect(result.guardrailFlags).toEqual([]);
+    expect(result.replyText?.toLowerCase()).toContain('confirm availability');
+  });
+
+  it('records what was verified on the AI action, so a reply can be audited', async () => {
+    const store = new MemoryStore();
+    const { business } = seedBusiness(store);
+    const deps = makeDeps(store);
+
+    await processInboundMessage(deps, {
+      businessId: business.id,
+      phoneNumber: PHONE,
+      text: 'Room for 15 Sept, 2 guests?',
+      providerMessageId: 'wamid.av4',
+      now: new Date('2026-09-07T10:00:00Z'),
+    });
+
+    const action = store.aiActions.at(-1)!;
+    expect(action.entities.availability_checked).toBe(true);
+    expect(action.entities.availability_window).toBe('2026-09-15/2026-09-16');
+    expect(action.entities.available_rooms).toContain('Deluxe Room');
+  });
+
+  it('only offers rooms that can seat the party', async () => {
+    const store = new MemoryStore();
+    const { business } = seedBusiness(store);
+    const deps = makeDeps(store);
+
+    const result = await processInboundMessage(deps, {
+      businessId: business.id,
+      phoneNumber: PHONE,
+      text: 'Room for 15 Sept for 4 people?',
+      providerMessageId: 'wamid.av5',
+      now: new Date('2026-09-07T10:00:00Z'),
+    });
+
+    // Only the Suite takes four guests.
+    expect(result.replyText).toContain('Suite');
+    expect(result.replyText).not.toContain('Deluxe Room');
+    expect(result.guardrailFlags).toEqual([]);
+  });
+});
+
 describe('tenant isolation', () => {
   it('never lets one hotel see or touch another hotel’s records', async () => {
     const store = new MemoryStore();

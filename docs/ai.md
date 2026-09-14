@@ -12,6 +12,7 @@ It is not a general chatbot, and it is not the source of truth for anything.
 | Dates, guests, nights, room preference | Deterministic extractor first; the model may only add |
 | Lead score and temperature | **Deterministic code only** |
 | What is true about the hotel | **Database only** |
+| Whether a room is free | **The availability calculator, from the hotel's own inventory** |
 | Whether to reply at all | Application (conversation mode + hotel settings) |
 | Wording of the reply | Model |
 | Whether the reply may be sent | **Guardrails, against the database** |
@@ -39,9 +40,12 @@ Uses the OpenAI **Responses API**.
     validates and applies them: `flag_for_human`, `schedule_follow_up`,
     `cancel_follow_up`, `update_lead`. The model never writes to the database.
 
-There is deliberately **no availability tool**. `get_current_conversation_state`
-returns `live_availability_available: false` so the model is told plainly that the
-information does not exist.
+There is deliberately **no availability tool the model can call with dates of its
+own choosing**. The application decides which dates to verify — the ones on the
+enquiry — and hands the model the result. `get_current_conversation_state` returns
+`availability_checked` plus the verified numbers, or `availability: null` when
+nothing was checked. That keeps exactly one verified window per turn, which is
+what makes the guardrail below enforceable.
 
 ### `RulesAiProvider`
 
@@ -60,7 +64,9 @@ before anything is sent. It blocks:
 
 | Flag | What it catches |
 | --- | --- |
-| `claimed_availability` | An unhedged statement that a room *is* available |
+| `unverified_availability` | Said a room is free with no verified lookup, or for dates outside the one that was checked |
+| `contradicts_availability` | Said a room is free when the verified numbers say it is not |
+| `wrong_sold_out` | Said the hotel is full when the verified numbers say a room is free |
 | `claimed_booking` | "Your booking is confirmed", "I've reserved…" |
 | `claimed_payment` | "Payment received" |
 | `invented_discount` | Any discount, special rate or complimentary offer |
@@ -68,13 +74,30 @@ before anything is sent. It blocks:
 | `invented_room` | A room type the hotel has not created |
 | `empty_reply` | The model returned nothing |
 
-Availability detection is sentence-level and hedge-aware:
+### Availability: verified, not forbidden
+
+This is the one rule that changed when real inventory arrived. Availability
+claims are checked **per clause**, so a reply may truthfully pair a free room
+with a full one, and hedged statements are always allowed — deferring to a human
+is never a false claim.
 
 ```
-"Yes, we have a Deluxe Room available for 15 September."     → blocked
-"Our Deluxe Room is ₹2,800 per night. I'll need the hotel
- team to confirm availability for your dates."                → allowed
+No lookup ran (no dates in the conversation):
+  "Yes, we have a Deluxe Room available."                   → blocked
+  "I'll need the team to confirm availability."             → allowed
+
+Verified 15–17 Sept: Deluxe free, Suite sold out:
+  "The Deluxe Room is available for those dates."           → allowed
+  "The Suite is available for those dates."                 → blocked
+  "The Deluxe is free, but the Suite is fully booked."      → allowed
+  "Sorry, we're fully booked."                              → blocked
+  "Yes, we have a Deluxe available on 25 December."         → blocked (wrong dates)
 ```
+
+The failure mode matters: a hotel that has not configured any inventory produces
+no verified lookup, so every positive claim is blocked and the assistant behaves
+exactly as it did before this feature existed. Safety is the default, not an
+add-on.
 
 **A blocked reply is never rewritten into a different claim.** The hotel's own
 escalation message is sent instead, the conversation moves to `human` mode, and

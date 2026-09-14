@@ -30,6 +30,7 @@
   │   → AI analyse (intent, entities, escalation)                 │
   │   → deterministic score → lead state                          │
   │   → reply gate (AI? human? paused? disabled?)                 │
+  │   → verify availability for the enquiry's dates               │
   │   → generate → guardrails → send → record                     │
   │   → apply model-requested actions                             │
   │   → schedule the next follow-up                               │
@@ -81,6 +82,7 @@ reason.
 | Lead scoring | `lib/leads/scoring.ts` | Deterministic signal → score → temperature |
 | Lead state | `lib/leads/status.ts` | Documented state machine |
 | Knowledge | `lib/knowledge/` | The trusted hotel snapshot and its prompt rendering |
+| Availability | `lib/availability/` | Pure inventory arithmetic, the lookup service, and editing |
 | AI | `lib/ai/` | Classification, generation, guardrails, two providers |
 | Follow-up engine | `lib/followups/engine.ts` | Pure decisions: schedule / skip / still-eligible |
 | Follow-up service | `lib/followups/service.ts` | Applies decisions to the database and provider |

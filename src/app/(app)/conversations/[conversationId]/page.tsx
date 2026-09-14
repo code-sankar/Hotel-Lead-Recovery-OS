@@ -3,6 +3,10 @@ import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { requireBusiness } from '@/lib/auth/session';
 import { getConversationDetail, listConversations, listTeamMembers } from '@/lib/db/queries';
+import { createServerSupabase } from '@/lib/db/server-client';
+import { storeForBusiness } from '@/lib/db/user-store';
+import { checkAvailability } from '@/lib/availability/service';
+import type { Room } from '@/types/domain';
 import { isServiceWindowOpen } from '@/lib/messaging/window';
 import { ConversationList } from '@/components/conversations/conversation-list';
 import { MessageThread } from '@/components/conversations/message-thread';
@@ -32,6 +36,35 @@ export default async function ConversationPage({
   ]);
 
   if (!detail) notFound();
+
+  // The same lookup the assistant is held to, so staff see exactly what it saw.
+  const supabase = await createServerSupabase();
+  const { data: roomRows } = await supabase
+    .from('rooms')
+    .select('*')
+    .eq('business_id', active.business.id)
+    .eq('active', true)
+    .order('sort_order');
+  const rooms = (roomRows ?? []) as Room[];
+
+  const availability = detail.lead
+    ? await checkAvailability(
+        storeForBusiness(supabase),
+        active.business.id,
+        rooms.map((room) => ({
+          id: room.id,
+          name: room.name,
+          basePrice: Number(room.base_price),
+          maxGuests: room.max_guests,
+          totalUnits: room.total_units,
+        })),
+        {
+          checkIn: detail.lead.expected_check_in,
+          checkOut: detail.lead.expected_check_out,
+          guests: detail.lead.guests,
+        },
+      )
+    : null;
 
   const customerName = detail.customer.name ?? formatPhone(detail.customer.phone_number);
   const windowOpen = isServiceWindowOpen(detail.conversation.last_inbound_at);
@@ -88,6 +121,8 @@ export default async function ConversationPage({
           team={team}
           currency={active.business.currency}
           timezone={active.business.timezone}
+          availability={availability}
+          rooms={rooms.map((room) => ({ id: room.id, name: room.name }))}
         />
       </div>
     </>

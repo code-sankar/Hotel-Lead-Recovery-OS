@@ -3,9 +3,10 @@
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
 import type { FollowUp, Lead, LeadEvent, StaffNote } from '@/types/domain';
+import type { AvailabilitySnapshot } from '@/lib/availability/calculate';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea } from '@/components/ui/input';
-import { LeadStatusBadge, TemperatureBadge } from '@/components/ui/badge';
+import { Badge, LeadStatusBadge, TemperatureBadge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import { INTENT_LABELS } from '@/lib/ai/intent';
 import { formatCurrency, formatDate, formatDateTime, formatRelative } from '@/lib/utils/format';
@@ -48,6 +49,8 @@ export function LeadPanel({
   team,
   currency,
   timezone,
+  availability,
+  rooms,
 }: {
   lead: Lead | null;
   events: LeadEvent[];
@@ -56,6 +59,9 @@ export function LeadPanel({
   team: Array<{ userId: string; profile: { full_name: string | null } | null }>;
   currency: string;
   timezone: string;
+  /** What the app verified for this lead's dates, or null if none are known. */
+  availability: AvailabilitySnapshot | null;
+  rooms: Array<{ id: string; name: string }>;
 }) {
   if (!lead) {
     return (
@@ -90,7 +96,14 @@ export function LeadPanel({
 
       {!isClosed ? (
         <div className="flex gap-2 border-b border-ink-200 px-4 py-3">
-          <ConvertDialog leadId={lead.id} currency={currency} suggested={lead.estimated_value} />
+          <ConvertDialog
+            leadId={lead.id}
+            currency={currency}
+            suggested={lead.estimated_value}
+            rooms={rooms}
+            checkIn={lead.expected_check_in}
+            checkOut={lead.expected_check_out}
+          />
           <LoseDialog leadId={lead.id} />
         </div>
       ) : (
@@ -108,6 +121,10 @@ export function LeadPanel({
           )}
         </div>
       )}
+
+      <Section title="Availability">
+        <AvailabilityPanel availability={availability} currency={currency} />
+      </Section>
 
       <Section title="Enquiry details">
         <LeadDetailsForm lead={lead} currency={currency} />
@@ -177,6 +194,65 @@ export function LeadPanel({
         </ol>
       </Section>
     </aside>
+  );
+}
+
+function AvailabilityPanel({
+  availability,
+  currency,
+}: {
+  availability: AvailabilitySnapshot | null;
+  currency: string;
+}) {
+  if (!availability || availability.nights === 0) {
+    return (
+      <p className="text-[13px] text-ink-500">
+        No dates on this enquiry yet, so nothing has been checked. The assistant will keep deferring
+        availability to your team until dates are known.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-[12px] text-ink-500">
+        {availability.checkIn} → {availability.checkOut} ·{' '}
+        {availability.nights} night{availability.nights === 1 ? '' : 's'}
+        {availability.guests ? ` · ${availability.guests} guest(s)` : ''}
+      </p>
+
+      {availability.rooms.length === 0 ? (
+        <p className="text-[13px] text-ink-600">No room type can take this party.</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {availability.rooms.map((room) => (
+            <li key={room.roomId} className="flex items-center justify-between gap-2 text-[13px]">
+              <span className="text-ink-700">{room.roomName}</span>
+              {room.available ? (
+                <Badge tone="money">{room.unitsFree} free</Badge>
+              ) : (
+                <Badge tone="hot">Sold out</Badge>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {availability.anyAvailable ? (
+        <p className="text-[12px] text-ink-500">
+          The assistant may quote these directly, from{' '}
+          {formatCurrency(
+            Math.min(...availability.rooms.filter((r) => r.available).map((r) => r.basePrice)),
+            currency,
+          )}{' '}
+          per night.
+        </p>
+      ) : (
+        <p className="text-[12px] text-warm-700">
+          Nothing free for these dates. The assistant will say so rather than guess.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -303,10 +379,16 @@ function ConvertDialog({
   leadId,
   currency,
   suggested,
+  rooms,
+  checkIn,
+  checkOut,
 }: {
   leadId: string;
   currency: string;
   suggested: number | null;
+  rooms: Array<{ id: string; name: string }>;
+  checkIn: string | null;
+  checkOut: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -320,7 +402,7 @@ function ConvertDialog({
       </DialogTrigger>
       <DialogContent
         title="Record the booking"
-        description="Enter the revenue for this booking. It is what the dashboard reports."
+        description="The revenue is what the dashboard reports. Adding the stay also blocks those nights in your availability."
       >
         <form
           action={(formData) =>
@@ -350,6 +432,42 @@ function ConvertDialog({
               autoFocus
             />
           </Field>
+
+          <div className="rounded-md border border-ink-200 px-3 py-3">
+            <p className="text-[13px] font-medium text-ink-800">Block the stay (optional)</p>
+            <p className="mt-0.5 text-[12px] text-ink-500">
+              Fill this in and those nights stop being offered to other guests.
+            </p>
+
+            <div className="mt-3 flex flex-col gap-3">
+              <Field label="Room type" htmlFor="roomId">
+                <Select id="roomId" name="roomId" defaultValue="">
+                  <option value="">Do not block any rooms</option>
+                  {rooms.map((room) => (
+                    <option key={room.id} value={room.id}>
+                      {room.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <div className="grid grid-cols-3 gap-2">
+                <Field label="Check-in" htmlFor="bookingCheckIn">
+                  <Input id="bookingCheckIn" name="checkIn" type="date" defaultValue={checkIn ?? ''} />
+                </Field>
+                <Field label="Check-out" htmlFor="bookingCheckOut">
+                  <Input
+                    id="bookingCheckOut"
+                    name="checkOut"
+                    type="date"
+                    defaultValue={checkOut ?? ''}
+                  />
+                </Field>
+                <Field label="Rooms" htmlFor="units">
+                  <Input id="units" name="units" type="number" min={1} max={50} defaultValue={1} />
+                </Field>
+              </div>
+            </div>
+          </div>
           <Button type="submit" variant="success" disabled={pending}>
             {pending ? 'Saving…' : 'Record conversion'}
           </Button>

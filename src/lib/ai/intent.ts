@@ -110,6 +110,7 @@ const RULES: IntentRule[] = [
       /\bvacan(?:t|cy)\b/i,
       /\bany rooms?\b/i,
       /\brooms?\s+(?:free|open|left)\b/i,
+      /\brooms?\s+for\b/i,
       /\broom hai\b/i,
       /\bkhali\b/i,
       /\bdo you have\b[^?]*\brooms?\b/i,

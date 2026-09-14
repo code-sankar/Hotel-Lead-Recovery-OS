@@ -77,6 +77,32 @@ function policyOfType(knowledge: HotelKnowledge, type: string): string | null {
 const AVAILABILITY_HEDGE =
   'I will need the hotel team to confirm availability for your dates — I do not have the live room chart here.';
 
+/**
+ * Turns a verified snapshot into a sentence. Only called when the application
+ * actually checked the dates; with no snapshot the engine keeps hedging, which
+ * is what the guardrails independently require.
+ */
+function describeAvailability(
+  snapshot: NonNullable<ReplyInput['availability']>,
+  currency: string,
+): string {
+  const free = snapshot.rooms.filter((room) => room.available);
+  const nights = snapshot.nights === 1 ? '1 night' : `${snapshot.nights} nights`;
+
+  if (free.length === 0) {
+    return `I have checked ${snapshot.checkIn} to ${snapshot.checkOut} (${nights}) and we are fully booked for those dates. If you can move your dates, tell me and I will check again.`;
+  }
+
+  const list = free
+    .map(
+      (room) =>
+        `• ${room.roomName} — ${formatMoney(room.basePrice, currency)} per night, ${room.unitsFree} room${room.unitsFree === 1 ? '' : 's'} free`,
+    )
+    .join('\n');
+
+  return `For ${snapshot.checkIn} to ${snapshot.checkOut} (${nights}) we have:\n${list}`;
+}
+
 export class RulesAiProvider implements AiProvider {
   readonly name = 'rules';
   readonly model = 'rules-v1';
@@ -157,6 +183,13 @@ export class RulesAiProvider implements AiProvider {
         if (rooms.length === 0) {
           return `${greeting}I do not have our room details loaded yet — someone from the team will share the options and rates with you shortly.`;
         }
+
+        // With verified numbers, answer the availability question directly.
+        if (input.availability && input.availability.nights > 0) {
+          const answer = `${greeting}${describeAvailability(input.availability, currency)}`;
+          return missing ? `${answer}\n\n${missing}` : answer;
+        }
+
         const list = rooms.map((room) => `• ${describeRoom(room, currency)}`).join('\n');
         const head =
           analysis.intent === 'room_availability'
@@ -168,6 +201,16 @@ export class RulesAiProvider implements AiProvider {
       case 'booking_intent': {
         toolCalls.push({ name: 'flag_for_human', arguments: { reason: 'guest wants to book' } });
         const detail = missing ? ` ${missing}` : '';
+
+        if (input.availability && input.availability.nights > 0) {
+          if (!input.availability.anyAvailable) {
+            return `${greeting}I have checked ${input.availability.checkIn} to ${input.availability.checkOut} and we are fully booked for those dates. Our team will come back to you here — tell me if other dates would work.`;
+          }
+          const free = input.availability.rooms.filter((room) => room.available);
+          const names = free.map((room) => room.roomName).join(' and ');
+          return `${greeting}we do have the ${names} open for ${input.availability.checkIn} to ${input.availability.checkOut}. I have passed this to our team to confirm and complete the booking with you here.${detail}`;
+        }
+
         return `${greeting}happy to take this forward. I will ask our team to confirm availability and come back to you here with the confirmation.${detail}`;
       }
 

@@ -13,6 +13,7 @@ export type Capability =
   | 'whatsapp:manage'
   | 'hotel_content:manage'
   | 'follow_up_rules:manage'
+  | 'availability:manage'
   | 'analytics:view'
   | 'conversations:handle'
   | 'leads:manage'
@@ -26,6 +27,7 @@ const ROLE_CAPABILITIES: Record<MemberRole, readonly Capability[]> = {
     'whatsapp:manage',
     'hotel_content:manage',
     'follow_up_rules:manage',
+    'availability:manage',
     'analytics:view',
     'conversations:handle',
     'leads:manage',
@@ -34,6 +36,7 @@ const ROLE_CAPABILITIES: Record<MemberRole, readonly Capability[]> = {
   ],
   manager: [
     'follow_up_rules:manage',
+    'availability:manage',
     'analytics:view',
     'conversations:handle',
     'leads:manage',
@@ -59,6 +62,6 @@ export const ROLE_LABELS: Record<MemberRole, string> = {
 
 export const ROLE_DESCRIPTIONS: Record<MemberRole, string> = {
   owner: 'Full access, including hotel settings, WhatsApp and the team.',
-  manager: 'Conversations, leads, follow-up rules and analytics.',
+  manager: 'Conversations, leads, availability, follow-up rules and analytics.',
   staff: 'Conversations, leads and customers.',
 };

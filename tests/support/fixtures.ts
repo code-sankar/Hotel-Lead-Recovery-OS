@@ -84,6 +84,7 @@ export function seedBusiness(
       amenities: room.amenities,
       breakfastIncluded: room.breakfastIncluded,
       notes: room.notes,
+      totalUnits: room.totalUnits,
     })),
     policies: DEMO_POLICIES.map((policy) => ({
       type: policy.type,

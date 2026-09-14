@@ -33,6 +33,9 @@ export function RoomsEditor({
               {formatCurrency(Number(room.base_price), currency)} / night
             </span>
             <Badge>Sleeps {room.max_guests}</Badge>
+            <Badge>
+              {room.total_units} room{room.total_units === 1 ? '' : 's'}
+            </Badge>
             {room.breakfast_included ? <Badge tone="money">Breakfast included</Badge> : null}
             {!room.active ? <Badge>Inactive</Badge> : null}
           </div>
@@ -105,7 +108,7 @@ function RoomForm({
         />
       </Field>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Maximum guests" htmlFor="maxGuests" error={state.fieldErrors?.maxGuests}>
           <Input
             id="maxGuests"
@@ -114,6 +117,22 @@ function RoomForm({
             min={1}
             max={30}
             defaultValue={room?.max_guests ?? 2}
+            required
+          />
+        </Field>
+        <Field
+          label="How many of these"
+          htmlFor="totalUnits"
+          hint="Rooms of this type the hotel has."
+          error={state.fieldErrors?.totalUnits}
+        >
+          <Input
+            id="totalUnits"
+            name="totalUnits"
+            type="number"
+            min={0}
+            max={500}
+            defaultValue={room?.total_units ?? 1}
             required
           />
         </Field>

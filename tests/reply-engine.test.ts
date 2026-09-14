@@ -4,6 +4,7 @@ import { matchFaq } from '@/lib/ai/rules-provider';
 import { enforceGuardrails } from '@/lib/ai/guardrails';
 import { resolveReadTool, toActionCall } from '@/lib/ai/openai-provider';
 import type { ReplyInput } from '@/lib/ai/types';
+import { calculateAvailability } from '@/lib/availability/calculate';
 import { MemoryStore } from './support/memory-store';
 import { seedBusiness } from './support/fixtures';
 
@@ -182,11 +183,42 @@ describe('model tool surface', () => {
     expect(rooms[0]!.base_price).toBe(2800);
   });
 
-  it('tells the model plainly that live availability does not exist', () => {
+  it('tells the model plainly when availability was not checked', () => {
     const state = resolveReadTool('get_current_conversation_state', {}, replyInput()) as {
-      live_availability_available: boolean;
+      availability_checked: boolean;
+      availability: unknown;
     };
-    expect(state.live_availability_available).toBe(false);
+    expect(state.availability_checked).toBe(false);
+    expect(state.availability).toBeNull();
+  });
+
+  it('hands the model the verified numbers when they exist', () => {
+    const snapshot = calculateAvailability({
+      checkIn: '2026-09-15',
+      checkOut: '2026-09-16',
+      rooms: knowledge.rooms.map((room) => ({
+        id: room.id,
+        name: room.name,
+        basePrice: room.basePrice,
+        maxGuests: room.maxGuests,
+        totalUnits: room.totalUnits,
+      })),
+      overrides: [],
+      bookings: [],
+    });
+
+    const state = resolveReadTool(
+      'get_current_conversation_state',
+      {},
+      replyInput({ availability: snapshot }),
+    ) as {
+      availability_checked: boolean;
+      availability: { any_available: boolean; rooms: Array<{ name: string; units_free: number }> };
+    };
+
+    expect(state.availability_checked).toBe(true);
+    expect(state.availability.any_available).toBe(true);
+    expect(state.availability.rooms.find((r) => r.name === 'Deluxe Room')?.units_free).toBe(12);
   });
 
   it('refuses to invent a room the hotel does not have', () => {

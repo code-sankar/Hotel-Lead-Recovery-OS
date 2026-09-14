@@ -2,7 +2,13 @@ import OpenAI from 'openai';
 import { z } from 'zod';
 import { LEAD_INTENTS, type LeadIntent, type LeadTemperature } from '@/types/domain';
 import type { HotelKnowledge } from '@/lib/knowledge/types';
-import { ANALYSIS_INSTRUCTIONS, buildSystemPrompt, formatHistoryForPrompt, formatLeadStateForPrompt } from './prompts';
+import {
+  ANALYSIS_INSTRUCTIONS,
+  buildSystemPrompt,
+  formatAvailabilityForPrompt,
+  formatHistoryForPrompt,
+  formatLeadStateForPrompt,
+} from './prompts';
 import { extractEntities, mergeEntities, type BookingEntities } from './entities';
 import { classifyIntent } from './intent';
 import { SUGGESTED_ACTIONS, type AiAnalysis, type AiProvider, type AiToolCall, type AnalyzeInput, type ReplyInput, type ReplyOutput, type SuggestedAction } from './types';
@@ -102,7 +108,10 @@ function buildTools(): OpenAI.Responses.Tool[] {
 
   return [
     fn('get_hotel_profile', 'Hotel name, address, description, check-in/check-out times and amenities.'),
-    fn('get_room_types', 'All bookable room types with their nightly rates and capacity.'),
+    fn(
+      'get_room_types',
+      'All bookable room types with their nightly rates, capacity and total room count. This is NOT availability.',
+    ),
     fn(
       'get_room_details',
       'Full detail for one room type.',
@@ -215,6 +224,8 @@ export class OpenAiProvider implements AiProvider {
         content: [
           formatLeadStateForPrompt(input.leadState),
           `Detected intent: ${input.analysis.intent}.`,
+          '',
+          formatAvailabilityForPrompt(input.availability, input.knowledge.business.currency),
           '',
           'Conversation so far:',
           formatHistoryForPrompt(input.history),
@@ -387,7 +398,23 @@ export function resolveReadTool(
         known_guests: input.leadState.guests,
         room_preference: input.leadState.roomPreference,
         follow_ups_sent: input.leadState.followUpsSent,
-        live_availability_available: false,
+        // Availability is verified per enquiry by the application, never by the
+        // model. Absent means it was not checked, which is not the same as free.
+        availability_checked: Boolean(input.availability && input.availability.nights > 0),
+        availability: input.availability
+          ? {
+              check_in: input.availability.checkIn,
+              check_out: input.availability.checkOut,
+              nights: input.availability.nights,
+              any_available: input.availability.anyAvailable,
+              rooms: input.availability.rooms.map((room) => ({
+                name: room.roomName,
+                units_free: room.unitsFree,
+                available: room.available,
+                sold_out_dates: room.soldOutDates,
+              })),
+            }
+          : null,
       };
     default:
       return { error: `Unknown tool ${name}` };

@@ -41,7 +41,7 @@ export function formatKnowledgeForPrompt(knowledge: HotelKnowledge): string {
     lines.push('No room types configured. You must not quote any price or room name.');
   } else {
     for (const room of rooms) {
-      lines.push(`- ${describeRoom(room, business.currency)}`);
+      lines.push(`- ${describeRoom(room, business.currency)} (${room.totalUnits} in total)`);
       if (room.description) lines.push(`  Description: ${room.description}`);
       if (room.notes) lines.push(`  Notes: ${room.notes}`);
     }
@@ -66,7 +66,7 @@ export function formatKnowledgeForPrompt(knowledge: HotelKnowledge): string {
   lines.push('');
   lines.push('## INVENTORY');
   lines.push(
-    'This system does NOT have live room availability. You never know whether a room is free on a given date. Availability must always be confirmed by the hotel team.',
+    'Room counts above are what the hotel owns in total, not what is free. Whether a room is free on a given date comes only from the AVAILABILITY section, which is verified per enquiry. If that section is missing, you do not know.',
   );
 
   return lines.join('\n');

@@ -233,6 +233,10 @@ export async function convertLeadAction(formData: FormData): Promise<ActionResul
     const parsed = convertLeadSchema.safeParse({
       leadId: formData.get('leadId'),
       conversionValue: formData.get('conversionValue'),
+      roomId: formData.get('roomId') || null,
+      checkIn: formData.get('checkIn') || null,
+      checkOut: formData.get('checkOut') || null,
+      units: formData.get('units') || null,
     });
     if (!parsed.success) return firstIssue(parsed.error);
 
@@ -258,13 +262,42 @@ export async function convertLeadAction(formData: FormData): Promise<ActionResul
       'lead_converted',
     );
 
+    // Recording the stay is what consumes inventory, and it is the only way a
+    // booking record comes to exist — the assistant never creates one.
+    let bookingRecorded = false;
+    const { roomId, checkIn, checkOut } = parsed.data;
+    if (roomId && checkIn && checkOut && checkOut > checkIn) {
+      const supabase = await createServerSupabase();
+      const { data: room } = await supabase
+        .from('rooms')
+        .select('id')
+        .eq('business_id', lead.business_id)
+        .eq('id', roomId)
+        .maybeSingle();
+
+      if (!room) return { ok: false, error: 'That room type does not belong to this hotel.' };
+
+      await store.createBooking({
+        businessId: lead.business_id,
+        leadId: lead.id,
+        customerId: lead.customer_id,
+        roomId,
+        checkIn,
+        checkOut,
+        units: parsed.data.units ?? 1,
+        totalValue: parsed.data.conversionValue,
+        createdBy: session.user.id,
+      });
+      bookingRecorded = true;
+    }
+
     await store.insertLeadEvent({
       businessId: lead.business_id,
       leadId: lead.id,
       type: 'lead_converted',
       actorType: 'staff',
       actorUserId: session.user.id,
-      data: { value: parsed.data.conversionValue },
+      data: { value: parsed.data.conversionValue, booking_recorded: bookingRecorded },
     });
     await store.insertAnalyticsEvent({
       businessId: lead.business_id,
@@ -275,8 +308,14 @@ export async function convertLeadAction(formData: FormData): Promise<ActionResul
       occurredAt: now,
     });
 
+    revalidatePath('/settings/availability');
     revalidateConversation(lead.conversation_id);
-    return { ok: true, message: 'Lead marked as converted.' };
+    return {
+      ok: true,
+      message: bookingRecorded
+        ? 'Converted, and the stay is now blocked in your availability.'
+        : 'Lead marked as converted.',
+    };
   } catch (error) {
     return fail(error);
   }

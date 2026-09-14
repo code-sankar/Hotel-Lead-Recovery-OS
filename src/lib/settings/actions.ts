@@ -202,6 +202,7 @@ export async function saveRoomAction(
     description: formData.get('description'),
     basePrice: formData.get('basePrice'),
     maxGuests: formData.get('maxGuests'),
+    totalUnits: formData.get('totalUnits'),
     amenities: listOf(formData.get('amenities')),
     breakfastIncluded: checkbox(formData, 'breakfastIncluded'),
     notes: formData.get('notes'),
@@ -216,6 +217,7 @@ export async function saveRoomAction(
     description: parsed.data.description || null,
     base_price: parsed.data.basePrice,
     max_guests: parsed.data.maxGuests,
+    total_units: parsed.data.totalUnits,
     amenities: parsed.data.amenities,
     breakfast_included: parsed.data.breakfastIncluded,
     notes: parsed.data.notes || null,
@@ -228,6 +230,7 @@ export async function saveRoomAction(
 
   if (error) return failure(error.message);
   revalidatePath('/settings/rooms');
+  revalidatePath('/settings/availability');
   revalidatePath('/onboarding/rooms');
   return success(parsed.data.id ? 'Room updated.' : 'Room added.');
 }

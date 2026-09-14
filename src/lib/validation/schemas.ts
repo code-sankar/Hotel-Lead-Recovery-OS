@@ -67,6 +67,7 @@ export const roomSchema = z.object({
   description: z.string().trim().max(1000).optional().or(z.literal('')),
   basePrice: z.coerce.number().min(0, 'Price cannot be negative.').max(10_000_000),
   maxGuests: z.coerce.number().int().min(1).max(30),
+  totalUnits: z.coerce.number().int().min(0, 'Cannot be negative.').max(500),
   amenities: z.array(z.string().trim().min(1).max(80)).max(30).default([]),
   breakfastIncluded: z.boolean().default(false),
   notes: z.string().trim().max(600).optional().or(z.literal('')),
@@ -120,6 +121,39 @@ export const whatsappSettingsSchema = z.object({
   messagingMode: z.enum(['demo', 'live']),
 });
 
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date.');
+
+export const availabilityUpdateSchema = z
+  .object({
+    /** Empty means every active room type. */
+    roomId: z.string().uuid().nullable(),
+    from: isoDate,
+    to: isoDate,
+    action: z.enum(['set_units', 'close', 'open', 'clear']),
+    units: z.coerce.number().int().min(0).max(500).optional(),
+  })
+  .refine((value) => value.to >= value.from, {
+    message: 'The end date cannot be before the start date.',
+    path: ['to'],
+  })
+  .refine((value) => value.action !== 'set_units' || value.units !== undefined, {
+    message: 'Enter how many rooms are available.',
+    path: ['units'],
+  });
+
+export const createBookingSchema = z
+  .object({
+    leadId: z.string().uuid(),
+    roomId: z.string().uuid(),
+    checkIn: isoDate,
+    checkOut: isoDate,
+    units: z.coerce.number().int().min(1).max(50).default(1),
+  })
+  .refine((value) => value.checkOut > value.checkIn, {
+    message: 'Check-out must be after check-in.',
+    path: ['checkOut'],
+  });
+
 export const sendMessageSchema = z.object({
   conversationId: z.string().uuid(),
   text: z.string().trim().min(1, 'Write a message.').max(4000),
@@ -133,6 +167,11 @@ export const conversationModeSchema = z.object({
 export const convertLeadSchema = z.object({
   leadId: z.string().uuid(),
   conversionValue: z.coerce.number().min(0).max(100_000_000),
+  /** Optional: recording the stay is what actually consumes inventory. */
+  roomId: z.string().uuid().nullable().optional(),
+  checkIn: isoDate.nullable().optional(),
+  checkOut: isoDate.nullable().optional(),
+  units: z.coerce.number().int().min(1).max(50).nullable().optional(),
 });
 
 export const loseLeadSchema = z.object({

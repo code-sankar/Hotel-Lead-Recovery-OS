@@ -164,6 +164,8 @@ export interface BusinessProfile {
   updated_at: string;
 }
 
+export type BookingStatus = 'confirmed' | 'cancelled';
+
 export interface Room {
   id: string;
   business_id: string;
@@ -171,6 +173,8 @@ export interface Room {
   description: string | null;
   base_price: number;
   max_guests: number;
+  /** How many physical rooms of this type exist. Baseline for availability. */
+  total_units: number;
   amenities: string[];
   breakfast_included: boolean;
   notes: string | null;
@@ -444,4 +448,36 @@ export interface AnalyticsEvent {
   value: number | null;
   data: Record<string, unknown>;
   occurred_at: string;
+}
+
+export interface RoomAvailability {
+  id: string;
+  business_id: string;
+  room_id: string;
+  /** ISO date (YYYY-MM-DD). */
+  date: string;
+  /** null means "use rooms.total_units for this date". */
+  units_available: number | null;
+  closed: boolean;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Booking {
+  id: string;
+  business_id: string;
+  lead_id: string | null;
+  customer_id: string;
+  room_id: string;
+  check_in: string;
+  check_out: string;
+  units: number;
+  guests: number | null;
+  status: BookingStatus;
+  total_value: number | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
 }

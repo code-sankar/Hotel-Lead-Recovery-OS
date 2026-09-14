@@ -4,7 +4,8 @@ import type { MessagingProvider } from '@/lib/messaging/types';
 import type { AiProvider, AiToolCall, ConversationTurn } from '@/lib/ai/types';
 import { isOptOut, isQualifyingIntent } from '@/lib/ai/intent';
 import { mergeEntities, type BookingEntities } from '@/lib/ai/entities';
-import { enforceGuardrails } from '@/lib/ai/guardrails';
+import { enforceGuardrails, type AvailabilityContext } from '@/lib/ai/guardrails';
+import { checkAvailability, roomsFromKnowledge } from '@/lib/availability/service';
 import { deriveLeadScore, detectSignals } from '@/lib/leads/scoring';
 import { statusForTemperature } from '@/lib/leads/status';
 import { cancelFollowUpsForLead, scheduleNextFollowUp, type FollowUpDeps } from '@/lib/followups/service';
@@ -360,7 +361,32 @@ export async function processInboundMessage(
     };
   }
 
-  // 12. Generate, then verify against trusted data before sending.
+  // 12. Verify availability for the dates this enquiry is about. This is the
+  // only thing that licenses the assistant to state a room is free, so it is
+  // computed by the application and handed to both the writer and the checker.
+  const availability = await checkAvailability(
+    store,
+    businessId,
+    roomsFromKnowledge(knowledge),
+    {
+      checkIn: lead.expected_check_in,
+      checkOut: lead.expected_check_out,
+      guests: lead.guests,
+    },
+  );
+
+  const availabilityContext: AvailabilityContext | null =
+    availability && availability.nights > 0
+      ? {
+          checkIn: availability.checkIn,
+          checkOut: availability.checkOut,
+          anyAvailable: availability.anyAvailable,
+          availableRoomNames: availability.rooms.filter((r) => r.available).map((r) => r.roomName),
+          soldOutRoomNames: availability.rooms.filter((r) => !r.available).map((r) => r.roomName),
+        }
+      : null;
+
+  // 13. Generate, then verify against trusted data before sending.
   const generation = await deps.ai.reply({
     message: input.text,
     history,
@@ -377,12 +403,14 @@ export async function processInboundMessage(
       followUpsSent: lead.follow_ups_sent,
     },
     customerName: customer.name,
+    availability,
   });
 
   const guarded = enforceGuardrails({
     reply: generation.text ?? '',
     knowledge,
     conversationContext: history.map((turn) => turn.text),
+    availability: availabilityContext,
   });
 
   const sendResult = await sendOutboundMessage({
@@ -411,7 +439,16 @@ export async function processInboundMessage(
     requiresHuman: analysis.requiresHuman,
     requiresFollowUp: analysis.requiresFollowUp,
     suggestedAction: analysis.suggestedAction,
-    entities: mergedEntities as Record<string, unknown>,
+    entities: {
+      ...(mergedEntities as Record<string, unknown>),
+      availability_checked: Boolean(availabilityContext),
+      ...(availabilityContext
+        ? {
+            availability_window: `${availabilityContext.checkIn}/${availabilityContext.checkOut}`,
+            available_rooms: availabilityContext.availableRoomNames,
+          }
+        : {}),
+    },
     decision: guarded.blocked ? 'blocked_by_guardrails' : sendResult.status,
     guardrailFlags: guarded.flags,
     latencyMs: generation.latencyMs,
@@ -458,10 +495,10 @@ export async function processInboundMessage(
     });
   }
 
-  // 13. Model-requested actions, applied by the application, not the model.
+  // 14. Model-requested actions, applied by the application, not the model.
   await applyToolCalls(deps, followUpDeps, lead, generation.toolCalls, now);
 
-  // 14. Follow-up scheduling.
+  // 15. Follow-up scheduling.
   let followUpScheduledFor: string | null = null;
   // A follow-up is owed while the enquiry itself is live — judged from the
   // lead's standing intent, not just the last message, since "2" or "let me
