@@ -12,7 +12,15 @@ import {
 import { storeForBusiness } from '@/lib/db/user-store';
 import { checkAvailability } from '@/lib/availability/service';
 import { hashInviteToken } from '@/lib/team/tokens';
-import { clientFor, isConfigured, startSupabaseShim, serviceToken, userToken } from './harness';
+import { isAbsent, probeSchema, type ProbeError } from '@/lib/setup/schema-check';
+import {
+  anonToken,
+  clientFor,
+  isConfigured,
+  startSupabaseShim,
+  serviceToken,
+  userToken,
+} from './harness';
 
 /**
  * Exercises the PostgREST layer for real: the embeds, the filters, the RPC
@@ -318,6 +326,35 @@ describe.skipIf(!isConfigured)('PostgREST layer', () => {
     expect(wa.error).not.toBeNull();
     const alerts = await owner.from('alert_channels').select('webhook_url');
     expect(alerts.error).not.toBeNull();
+  });
+
+  // --- the setup page's migration check ------------------------------------
+
+  it('probeSchema reports ready against a fully migrated schema', async () => {
+    // With the anon key, which is all the setup page has before anyone signs
+    // in. Proves every marker table is readable and the RPC is callable — the
+    // part unit tests with fake clients cannot show.
+    const anon = clientFor(shim.url, anonToken());
+    expect(await probeSchema(anon)).toEqual({ status: 'ready' });
+  });
+
+  it("pins the codes PostgREST really returns for 'not there'", async () => {
+    // The probe reads these codes to tell a missing migration from a denial.
+    // If a PostgREST upgrade changes them, this fails here rather than leaving
+    // the setup page quietly reporting a half-migrated project as ready.
+    const anon = clientFor(shim.url, anonToken());
+
+    const table = await anon.from('no_such_table').select('id').limit(1);
+    const column = await anon.from('businesses').select('no_such_column').limit(1);
+    const fn = await anon.rpc('no_such_function');
+
+    expect(table.error?.code).toBe('42P01');
+    expect(column.error?.code).toBe('42703');
+    expect(fn.error?.code).toBe('PGRST202');
+
+    for (const error of [table.error, column.error, fn.error]) {
+      expect(isAbsent(error as ProbeError)).toBe(true);
+    }
   });
 
   // --- tenant isolation, over HTTP ----------------------------------------

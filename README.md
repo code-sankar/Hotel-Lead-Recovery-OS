@@ -102,6 +102,7 @@ src/
     validation/        Zod schemas for every action input
   workers/             BullMQ worker + job processors
 supabase/migrations/   schema · functions · RLS policies
+supabase/verify.sql    read-only assertions about an applied database
 tests/                 unit + integration (the pipeline runs against an in-memory Store)
 docs/                  architecture · database · ai · whatsapp · followups
 ```
@@ -181,28 +182,67 @@ settings page shows only whether a value exists.
 
 ## Supabase setup
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. Apply the migrations in `supabase/migrations/`, in filename order:
-   - `20250101000000_init_schema.sql` — tables, enums, indexes
-   - `20250101000100_functions.sql` — helpers, triggers, provisioning RPCs, the
-     non-secret WhatsApp status view
-   - `20250101000200_rls_policies.sql` — Row Level Security
+1. Create a project at [supabase.com](https://supabase.com). Keep the database
+   password you choose — it is shown once, and applying the migrations needs it.
 
-   With the Supabase CLI:
+2. **Apply the migrations.** Copy the URI from **Project Settings → Database →
+   Connection string**, substitute your password, and run:
+
    ```bash
-   supabase link --project-ref <ref>
-   supabase db push
+   export SUPABASE_DB_URL='postgresql://postgres:PASSWORD@db.<ref>.supabase.co:5432/postgres'
+   npm run db:status     # seven PENDING
+   npm run db:push       # applies them, in filename order
+   npm run db:verify     # asserts the result
    ```
-   Or paste each file into the SQL editor in order.
-3. Copy the project URL, anon key and service role key into `.env.local`.
-4. Under **Authentication → URL Configuration**, add
-   `http://localhost:3000/auth/callback` as a redirect URL.
 
-Seven migrations apply in filename order; the later four add room availability,
-staff invitations, the operational event log and failure alerting. They have been
-executed end to end against a stock PostgreSQL 16 with a minimal Supabase `auth`
-shim: provisioning, tenant isolation, the role boundaries and every RPC were
-exercised there.
+   `scripts/db-push.sh` needs nothing but `psql` — no Supabase CLI, no Docker.
+   It records what it applied in `supabase_migrations.schema_migrations`, the
+   same ledger the Supabase CLI uses, so each file runs exactly once and a later
+   `supabase db push` agrees with the history. Each migration and its ledger row
+   are written in **one transaction**: a file that fails rolls back whole, and
+   nothing after it runs. Fix the cause and re-run — it resumes where it stopped.
+
+   It refuses to start against a database that is not Supabase-shaped (no
+   `anon`/`authenticated`/`service_role`, no `auth.users`) rather than leaving
+   half a schema behind, and it never prints your password.
+
+   | File | What it adds |
+   | --- | --- |
+   | `20250101000000_init_schema.sql` | Enums, 26 tables, indexes |
+   | `20250101000100_functions.sql` | RLS helpers, the signup trigger, provisioning RPCs, the non-secret WhatsApp view |
+   | `20250101000200_rls_policies.sql` | Row Level Security — the tenant boundary |
+   | `20250201000000_room_availability.sql` | Room inventory, date overrides, bookings |
+   | `20250301000000_staff_invites.sql` | Invitations and the accept RPC |
+   | `20250301000100_system_events.sql` | The operational event log |
+   | `20250301000200_alerting.sql` | Alert destinations and the alert throttle |
+
+   If you already use the Supabase CLI, `supabase link --project-ref <ref> &&
+   supabase db push` does the same job. Pasting the files into the SQL editor
+   works too — in filename order, each exactly once. They are deliberately not
+   individually idempotent (`create type` has no `if not exists`); the ledger is
+   what makes re-running safe, not the files.
+
+3. **Check what landed.** `npm run db:verify` runs `supabase/verify.sql`, which
+   is read-only and exits non-zero on any failure — so it can gate a deploy. It
+   asserts that all 26 tables and 10 functions exist, that RLS is enabled on
+   every table, that the only policy-less tables are the three credential ones,
+   that `anon` and `authenticated` hold no privilege on `whatsapp_integrations`
+   or `alert_channels` while still being able to read the two status views, that
+   the signup trigger is installed on `auth.users`, that invite tokens are stored
+   hashed, and that every tenant table carries `business_id`.
+
+4. Copy the project URL, anon key and service role key from **Project Settings →
+   API** into `.env.local`. `SUPABASE_DB_URL` belongs there too if you want
+   `db:push` to find it without exporting it each time; the application itself
+   never reads it, and it should not be set in your deployment's environment.
+
+5. Under **Authentication → URL Configuration**, set the Site URL and add
+   `http://localhost:3000/auth/callback` (and your deployed equivalent) as
+   redirect URLs. Without this, the email confirmation link bounces.
+
+6. Start the app and open `/setup`. It re-checks the environment, reaches the
+   project, and confirms the migrations are visible to the anon key — the same
+   ground truth from the application's side rather than the database's.
 
 See [`docs/database.md`](docs/database.md) for the schema and the RLS model.
 
@@ -321,13 +361,17 @@ LEADSTAY_PGRST_URL=http://127.0.0.1:55433 npm run test:integration
 ./scripts/local-stack.sh down
 ```
 
+`scripts/db-push.sh` works against it too — point `SUPABASE_DB_URL` at
+`postgresql://postgres@127.0.0.1:55432/leadstay` and `npm run db:verify` runs
+the same assertions locally that it runs against a hosted project.
+
 It needs `postgresql-16` server binaries and a `postgrest` binary on `PATH` or
 at `.local/postgrest`; neither is a project dependency.
 `supabase/local/supabase-shim.sql` is the test-only stand-in for Supabase's
 `auth` schema — it mirrors `auth.uid()`, `service_role`'s `BYPASSRLS`, and the
 default table privileges, so a migration's explicit `REVOKE` is not undone.
 
-261 hermetic tests across 16 files, plus 15 integration tests that run against
+270 hermetic tests across 17 files, plus 17 integration tests that run against
 real PostgREST:
 
 | File | Covers |
@@ -339,6 +383,7 @@ real PostgREST:
 | `followups.test.ts` | Scheduling, every stop condition, quiet hours, send-time eligibility |
 | `whatsapp.test.ts` | Webhook parsing, HMAC verification, challenge, Cloud API calls, 24h window |
 | `pipeline.test.ts` | End-to-end integration against an in-memory `Store` |
+| `setup-schema-check.test.ts` | The setup page's per-migration probe, on the codes PostgREST really returns |
 | `attribution.test.ts` | The revenue attribution rule |
 | `permissions.test.ts` | Role capability boundaries |
 | `validation.test.ts` | Zod schemas for hotel data and action inputs |

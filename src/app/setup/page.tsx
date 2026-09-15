@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { hasServiceRoleKey, supabaseConfigStatus } from '@/lib/env';
+import { probeSchema } from '@/lib/setup/schema-check';
 
 export const metadata: Metadata = { title: 'Finish setup' };
 export const dynamic = 'force-dynamic';
@@ -23,69 +24,64 @@ interface Check {
   fix?: React.ReactNode;
 }
 
-/** Confirms the project is reachable and the migrations have been applied. */
+function schemaIncomplete(missing: string, migration: string, adds: string): Check {
+  return {
+    state: 'error',
+    title: 'Database schema incomplete',
+    detail: `Supabase is reachable, but ${missing} is not there — the migration that adds ${adds} (${migration}) has not been applied.`,
+    fix: (
+      <>
+        Apply the migrations in <Code>supabase/migrations/</Code>, in filename order. With the
+        connection string from Supabase → Project Settings → Database:
+        <pre className="mt-2 overflow-x-auto rounded bg-ink-100 px-3 py-2 text-[12px] text-ink-700">
+          {`export SUPABASE_DB_URL='postgresql://postgres:PASSWORD@db.<ref>.supabase.co:5432/postgres'
+npm run db:push
+npm run db:verify`}
+        </pre>
+        <span className="mt-2 block">
+          <Code>db:push</Code> applies whatever is missing and records what it applied, so re-running
+          it is safe. <Code>db:verify</Code> then checks what this page cannot see with a browser key
+          — row level security, the policy matrix, and whether the credential tables are reachable.
+        </span>
+      </>
+    ),
+  };
+}
+
+/** Confirms the project is reachable and every migration has been applied. */
 async function probeDatabase(url: string, anonKey: string): Promise<Check> {
   try {
     const client = createClient(url, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { error } = await client.from('businesses').select('id').limit(1);
+    const probe = await probeSchema(client);
 
-    // 42P01 = undefined_table. RLS returns an empty result, not an error, so a
-    // missing table is the only reason this specific code appears.
-    if (error?.code === '42P01' || /does not exist/i.test(error?.message ?? '')) {
-      return {
-        state: 'error',
-        title: 'Database schema not applied',
-        detail: 'Supabase is reachable, but the tables this app needs do not exist yet.',
-        fix: (
-          <>
-            Apply the three migrations in <Code>supabase/migrations/</Code>, in filename order —
-            either with <Code>supabase db push</Code> after <Code>supabase link</Code>, or by pasting
-            each file into the SQL editor:
-            <ol className="mt-2 list-decimal space-y-0.5 pl-5">
-              <li>
-                <Code>20250101000000_init_schema.sql</Code>
-              </li>
-              <li>
-                <Code>20250101000100_functions.sql</Code>
-              </li>
-              <li>
-                <Code>20250101000200_rls_policies.sql</Code>
-              </li>
-            </ol>
-          </>
-        ),
-      };
+    switch (probe.status) {
+      case 'ready':
+        return {
+          state: 'ok',
+          title: 'Database ready',
+          detail: 'Supabase is reachable and every migration is applied.',
+        };
+      case 'incomplete':
+        return schemaIncomplete(probe.missing, probe.migration, probe.adds);
+      case 'unreachable':
+        return unreachable(url, probe.message);
+      case 'rejected':
+        return {
+          state: 'error',
+          title: 'Supabase rejected the request',
+          detail: probe.message,
+          fix: (
+            <>
+              Check that <Code>NEXT_PUBLIC_SUPABASE_URL</Code> and{' '}
+              <Code>NEXT_PUBLIC_SUPABASE_ANON_KEY</Code> come from the same Supabase project (Project
+              Settings → API), and that you copied the <em>anon</em> key rather than the service role
+              key.
+            </>
+          ),
+        };
     }
-
-    // supabase-js reports a transport failure as an error value rather than a
-    // throw, so an unreachable project lands here, not in the catch below.
-    if (error && /fetch failed|ENOTFOUND|ECONNREFUSED|network|getaddrinfo/i.test(error.message)) {
-      return unreachable(url, error.message);
-    }
-
-    if (error) {
-      return {
-        state: 'error',
-        title: 'Supabase rejected the request',
-        detail: error.message,
-        fix: (
-          <>
-            Check that <Code>NEXT_PUBLIC_SUPABASE_URL</Code> and{' '}
-            <Code>NEXT_PUBLIC_SUPABASE_ANON_KEY</Code> come from the same Supabase project (Project
-            Settings → API), and that you copied the <em>anon</em> key rather than the service role
-            key.
-          </>
-        ),
-      };
-    }
-
-    return {
-      state: 'ok',
-      title: 'Database ready',
-      detail: 'Supabase is reachable and the schema is applied.',
-    };
   } catch (error) {
     return unreachable(url, error instanceof Error ? error.message : String(error));
   }

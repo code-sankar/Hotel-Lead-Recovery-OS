@@ -19,6 +19,56 @@ minimal stand-in for Supabase's `auth` schema, and the behaviour below — tenan
 isolation, the role boundaries, and each `SECURITY DEFINER` function — was
 exercised against that database rather than reasoned about.
 
+## Applying them
+
+```bash
+export SUPABASE_DB_URL='postgresql://postgres:PASSWORD@db.<ref>.supabase.co:5432/postgres'
+npm run db:status     # applied vs pending
+npm run db:push       # apply the pending ones, in filename order
+npm run db:verify     # assert the result
+```
+
+`scripts/db-push.sh` needs only `psql`. It records what it applied in
+`supabase_migrations.schema_migrations` — the ledger the Supabase CLI uses — so
+each file runs exactly once and `supabase db push` later agrees with the
+history. Each migration and its ledger row are written in **one transaction**:
+a file that fails rolls back whole and nothing after it runs, so the fix is to
+correct the cause and re-run, which resumes where it stopped. It refuses to
+start against a database without `anon`/`authenticated`/`service_role` and
+`auth.users`, rather than leaving half a schema behind, and it never prints the
+password.
+
+The files are deliberately not individually idempotent — `create type` has no
+`if not exists` — so the ledger, not the files, is what makes re-running safe.
+Applying them by hand in the SQL editor works too, in filename order, each
+exactly once.
+
+`supabase/verify.sql` (`npm run db:verify`) is read-only and exits non-zero on
+any failure, so it can gate a deploy. Sixteen checks: all 26 tables and 10
+functions exist; RLS is on for every table; the only policy-less tables are the
+three credential ones; `anon` and `authenticated` hold no privilege on
+`whatsapp_integrations` or `alert_channels` but can read both status views; the
+views are not `security_invoker`; the RLS helpers are `SECURITY DEFINER`;
+`record_system_event` still returns `should_alert`; the signup trigger is on
+`auth.users`; `message_delivery_status` still has `simulated`; invite tokens are
+stored hashed with no plaintext column; every tenant table carries
+`business_id`; and the ledger lists all seven migrations.
+
+It was tested by breaking things on a real database — disabling RLS on one
+table, granting `authenticated` a read on `whatsapp_integrations`, flipping a
+view to `security_invoker`, adding a plaintext `token` column and deleting a
+ledger row — and confirming that exactly those five checks flipped to FAIL and
+the exit status went non-zero. Atomicity was tested the same way: a deliberate
+collision made the fourth migration fail, and neither its table nor its column
+nor its ledger row survived.
+
+The setup page runs a weaker version of this check from the application's side,
+with the anon key: `src/lib/setup/schema-check.ts` probes one marker per
+migration, so a project with only the first file applied reports the specific
+migration that is missing instead of "ready". Row level security is the one
+thing it cannot see — a policy filtering a row and an empty table look the same
+over PostgREST — which is why `db:verify` exists.
+
 One caveat when testing RLS by hand: an `UPDATE` filtered out by a policy
 affects zero rows and does **not** raise. "Denied" therefore means *no rows
 changed*, not *no error* — measuring the wrong one makes a working policy look
