@@ -189,6 +189,11 @@ export const updateLeadSchema = z.object({
   intent: z.enum(LEAD_INTENTS as unknown as [string, ...string[]]).optional(),
 });
 
+export const inviteStaffSchema = z.object({
+  email: emailSchema,
+  role: z.enum(['owner', 'manager', 'staff']),
+});
+
 export const assignLeadSchema = z.object({
   leadId: z.string().uuid(),
   staffId: z.string().uuid().nullable(),

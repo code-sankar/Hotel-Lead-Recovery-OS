@@ -2,6 +2,7 @@ import type { Business, FollowUp, Lead } from '@/types/domain';
 import type { Store } from '@/lib/db/store';
 import type { MessagingProvider } from '@/lib/messaging/types';
 import { sendOutboundMessage } from '@/lib/pipeline/outbound';
+import { logError } from '@/lib/monitoring/logger';
 import { statusForTemperature } from '@/lib/leads/status';
 import {
   decideNextFollowUp,
@@ -200,6 +201,19 @@ export async function executeFollowUp(
       attempts: followUp.attempts + 1,
       last_error: result.error ?? 'send failed',
     });
+    // The whole product promise is that this message goes out, so a failure is
+    // surfaced rather than left on a row nobody opens.
+    await logError({
+      scope: 'followup.send',
+      businessId: followUp.business_id,
+      message: `A follow-up could not be sent: ${result.error ?? 'send failed'}`,
+      detail: {
+        followUpId: followUp.id,
+        leadId: followUp.lead_id,
+        sequenceIndex: followUp.sequence_index,
+        usedTemplate: result.usedTemplate,
+      },
+    });
     return { status: 'failed', reason: result.error, followUpId: followUp.id };
   }
 
@@ -264,6 +278,13 @@ export async function runDueFollowUps(
         status: 'failed',
         attempts: followUp.attempts + 1,
         last_error: message,
+      });
+      await logError({
+        scope: 'followup.send',
+        businessId: followUp.business_id,
+        error,
+        message: 'A follow-up threw while being sent.',
+        detail: { followUpId: followUp.id, leadId: followUp.lead_id },
       });
       outcomes.push({ status: 'failed', reason: message, followUpId: followUp.id });
     }

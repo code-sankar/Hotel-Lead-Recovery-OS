@@ -481,3 +481,36 @@ export interface Booking {
   created_at: string;
   updated_at: string;
 }
+
+export type InviteStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
+
+export interface BusinessInvite {
+  id: string;
+  business_id: string;
+  email: string;
+  role: MemberRole;
+  invited_by: string | null;
+  expires_at: string;
+  accepted_at: string | null;
+  accepted_by: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SystemEventLevel = 'error' | 'warning';
+
+export interface SystemEvent {
+  id: string;
+  business_id: string;
+  level: SystemEventLevel;
+  scope: string;
+  message: string;
+  detail: Record<string, unknown>;
+  fingerprint: string;
+  occurrences: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+}

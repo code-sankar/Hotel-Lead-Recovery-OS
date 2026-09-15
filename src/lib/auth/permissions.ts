@@ -14,6 +14,7 @@ export type Capability =
   | 'hotel_content:manage'
   | 'follow_up_rules:manage'
   | 'availability:manage'
+  | 'system_health:view'
   | 'analytics:view'
   | 'conversations:handle'
   | 'leads:manage'
@@ -28,6 +29,7 @@ const ROLE_CAPABILITIES: Record<MemberRole, readonly Capability[]> = {
     'hotel_content:manage',
     'follow_up_rules:manage',
     'availability:manage',
+    'system_health:view',
     'analytics:view',
     'conversations:handle',
     'leads:manage',
@@ -37,6 +39,8 @@ const ROLE_CAPABILITIES: Record<MemberRole, readonly Capability[]> = {
   manager: [
     'follow_up_rules:manage',
     'availability:manage',
+    'system_health:view',
+    'system_health:view',
     'analytics:view',
     'conversations:handle',
     'leads:manage',

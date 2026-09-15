@@ -6,6 +6,7 @@ import { resolveMessagingProvider } from '@/lib/messaging/resolve';
 import { processInboundMessage } from '@/lib/pipeline/inbound';
 import { executeFollowUp, runDueFollowUps, type FollowUpDeps } from '@/lib/followups/service';
 import type { JobName, JobPayloads } from '@/lib/queue/jobs';
+import { logError } from '@/lib/monitoring/logger';
 
 /**
  * Job implementations, shared by the BullMQ worker and the inline runner used
@@ -23,6 +24,30 @@ function followUpDeps(): FollowUpDeps {
 }
 
 export async function runJob<K extends JobName>(name: K, payload: JobPayloads[K]): Promise<unknown> {
+  try {
+    return await dispatch(name, payload);
+  } catch (error) {
+    // Recorded, then rethrown so the queue still retries with backoff.
+    await logError({
+      scope: `job.${name}`,
+      businessId: businessIdOf(payload),
+      error,
+      message: `Background job "${name}" failed.`,
+    });
+    throw error;
+  }
+}
+
+/** Jobs carry their tenant differently; this keeps the log call honest. */
+function businessIdOf(payload: unknown): string | null {
+  if (payload && typeof payload === 'object' && 'businessId' in payload) {
+    const value = (payload as { businessId?: unknown }).businessId;
+    if (typeof value === 'string') return value;
+  }
+  return null;
+}
+
+async function dispatch<K extends JobName>(name: K, payload: JobPayloads[K]): Promise<unknown> {
   switch (name) {
     case 'process_inbound_message': {
       const input = payload as JobPayloads['process_inbound_message'];

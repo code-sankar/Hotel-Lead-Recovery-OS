@@ -15,6 +15,7 @@ const ITEMS: Array<{ href: string; label: string; capability?: Capability }> = [
   { href: '/settings/follow-ups', label: 'Follow-ups', capability: 'follow_up_rules:manage' },
   { href: '/settings/whatsapp', label: 'WhatsApp', capability: 'whatsapp:manage' },
   { href: '/settings/team', label: 'Team', capability: 'staff:manage' },
+  { href: '/settings/health', label: 'Health', capability: 'system_health:view' },
   { href: '/settings/profile', label: 'Your profile' },
 ];
 

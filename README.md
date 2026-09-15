@@ -87,6 +87,8 @@ src/
     availability/      pure inventory arithmetic · lookup service · editing actions
     analytics/         dashboard metrics and revenue attribution
     auth/              session, roles, capabilities
+    monitoring/        fingerprinting, the logger, the health log
+    team/              invite tokens and the join flow
     conversations/     staff actions (send, take over, convert, assign, note)
     db/                Store port · Supabase adapter · RLS-scoped read queries
     demo/              demo hotel data, seeding, simulation
@@ -191,6 +193,9 @@ settings page shows only whether a value exists.
 3. Copy the project URL, anon key and service role key into `.env.local`.
 4. Under **Authentication → URL Configuration**, add
    `http://localhost:3000/auth/callback` as a redirect URL.
+
+Six migrations apply in filename order; the later three add room availability,
+staff invitations and the operational event log.
 
 See [`docs/database.md`](docs/database.md) for the schema and the RLS model.
 
@@ -298,7 +303,7 @@ npm run lint
 npm test
 ```
 
-223 tests across 13 files:
+245 tests across 15 files:
 
 | File | Covers |
 | --- | --- |
@@ -315,6 +320,8 @@ npm test
 | `reply-engine.test.ts` | Reply behaviour, escalation, FAQ matching, the model tool surface |
 | `availability.test.ts` | Inventory arithmetic: bookings, closures, allotments, changeover days |
 | `user-store.test.ts` | The session-scoped read store used by availability pages |
+| `invites.test.ts` | Invite token shape, hashing, expiry and link building |
+| `monitoring.test.ts` | Fingerprint collapsing and the shape of a recorded event |
 
 The integration suite (`tests/pipeline.test.ts`) runs the real inbound pipeline
 and follow-up engine against an in-memory `Store`, covering: enquiry → lead →
@@ -349,8 +356,12 @@ These are deliberate MVP boundaries, not oversights:
 - **No alternative-date search.** When the requested dates are full the assistant
   says so and offers to check other dates; it does not go looking on its own.
 - **No payment.** Staff record revenue by hand; the assistant never takes money.
-- **Staff invitations are manual.** Add a `business_members` row in Supabase; there
-  is no invitation email flow yet.
+- **Invitations are links, not emails.** The app does not send email, so an owner
+  creates an invite and shares the link themselves — which for a WhatsApp-first
+  product is usually the right channel anyway. Nothing here needs SMTP.
+- **Failures are recorded, not pushed.** The Health page and a dashboard banner
+  surface what broke, but nobody is paged. Add an alerting integration before you
+  rely on noticing overnight.
 - **English-first.** Romanised Hindi/Hinglish enquiries are understood
   (`room hai?`, `price kya hai`, `2 person`), but replies are written in English.
 - **Rate limiting is per-instance.** In-memory, so it does not coordinate across

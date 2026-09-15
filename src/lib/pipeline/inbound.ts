@@ -10,6 +10,7 @@ import { deriveLeadScore, detectSignals } from '@/lib/leads/scoring';
 import { statusForTemperature } from '@/lib/leads/status';
 import { cancelFollowUpsForLead, scheduleNextFollowUp, type FollowUpDeps } from '@/lib/followups/service';
 import { sendOutboundMessage, previewOf } from './outbound';
+import { logError, logWarning } from '@/lib/monitoring/logger';
 
 /**
  * Inbound message pipeline.
@@ -456,7 +457,21 @@ export async function processInboundMessage(
   });
 
   if (guarded.blocked) {
-    // The model tried to state something the hotel data cannot support.
+    // The model tried to state something the hotel data cannot support. This is
+    // the guardrail working, but a hotel seeing it often should know: it means
+    // the assistant is unreliable for them and their team is picking up the slack.
+    await logWarning({
+      scope: 'ai.guardrail',
+      businessId,
+      message: `A generated reply was blocked before sending: ${guarded.flags.join(', ')}`,
+      detail: {
+        conversationId: conversation.id,
+        flags: guarded.flags,
+        model: generation.model,
+        availabilityChecked: Boolean(availabilityContext),
+      },
+    });
+
     await store.updateConversation(businessId, conversation.id, {
       mode: 'human',
       taken_over_at: now.toISOString(),
@@ -482,6 +497,21 @@ export async function processInboundMessage(
       conversationId: conversation.id,
       occurredAt: now.toISOString(),
       data: { sender: 'ai' },
+    });
+  }
+
+  if (sendResult.status === 'failed' || sendResult.status === 'blocked') {
+    // A guest asked something and got nothing back.
+    await logError({
+      scope: 'messaging.outbound',
+      businessId,
+      message: `A reply could not be delivered: ${sendResult.error ?? sendResult.status}`,
+      detail: {
+        conversationId: conversation.id,
+        status: sendResult.status,
+        usedTemplate: sendResult.usedTemplate,
+        windowKind: sendResult.window.kind,
+      },
     });
   }
 

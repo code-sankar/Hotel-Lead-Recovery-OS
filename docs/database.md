@@ -10,6 +10,8 @@ Migrations, applied in order:
    non-secret WhatsApp view
 3. `20250101000200_rls_policies.sql` — Row Level Security
 4. `20250201000000_room_availability.sql` — inventory, overrides, bookings
+5. `20250301000000_staff_invites.sql` — invitations and the accept RPC
+6. `20250301000100_system_events.sql` — the operational event log
 
 ## Tenancy
 
@@ -60,6 +62,8 @@ optional `business_id`, because an event may arrive before a tenant is resolved.
 | `staff_notes` | Internal notes | |
 | `analytics_events` | Lightweight metric stream | |
 | `webhook_events` | Provider receipts | Unique `(provider, provider_event_id)` |
+| `business_invites` | Pending and used invitations | Stores only a token **hash**; one live invite per email per hotel |
+| `system_events` | Operational failures, deduplicated and counted | Unique `(business_id, fingerprint)` |
 
 ## Enums
 
@@ -94,6 +98,8 @@ public.has_business_role(business_id, member_role[]) → boolean
 | `follow_up_rules` | any member | owner, manager |
 | Operational (`customers`, `conversations`, `messages`, `leads`, `lead_events`, `staff_notes`, `follow_ups`, `bookings`) | any member | any member |
 | `room_availability` | any member | owner, manager |
+| `business_invites` | owner | owner (the invitee uses `SECURITY DEFINER` RPCs) |
+| `system_events` | any member | owner, manager (resolve only; writes go through an RPC) |
 | Telemetry (`ai_actions`, `analytics_events`) | any member | service role only |
 | `whatsapp_integrations` | **nobody** (no policies) | service role only |
 | `webhook_events` | **nobody** | service role only |

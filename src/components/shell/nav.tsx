@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  AlertTriangle,
   BarChart3,
   LayoutDashboard,
   MessagesSquare,
@@ -28,7 +29,7 @@ export function SidebarNav({
   demoEnabled,
 }: {
   capabilities: readonly Capability[];
-  counts: { conversations: number; followUpsDue: number };
+  counts: { conversations: number; followUpsDue: number; openIssues: number };
   demoEnabled: boolean;
 }) {
   const pathname = usePathname();
@@ -51,6 +52,18 @@ export function SidebarNav({
     { href: '/analytics', label: 'Analytics', icon: BarChart3, capability: 'analytics:view' },
     { href: '/settings', label: 'Settings', icon: Settings },
   ];
+
+  // Only surfaced when something is actually wrong; a permanently visible
+  // "Health" link trains people to ignore it.
+  if (counts.openIssues > 0 && capabilities.includes('system_health:view')) {
+    items.splice(items.length - 1, 0, {
+      href: '/settings/health',
+      label: 'Health',
+      icon: AlertTriangle,
+      capability: 'system_health:view',
+      badge: counts.openIssues,
+    });
+  }
 
   if (demoEnabled) {
     items.push({ href: '/demo', label: 'Demo mode', icon: FlaskConical, capability: 'demo:run' });

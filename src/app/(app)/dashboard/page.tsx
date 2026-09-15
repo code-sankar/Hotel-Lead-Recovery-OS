@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { requireBusiness } from '@/lib/auth/session';
 import { can } from '@/lib/auth/permissions';
 import { getDashboardMetrics, getRecentActivity, rangeForDays, todayRange } from '@/lib/analytics/metrics';
+import { countOpenWork } from '@/lib/db/queries';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,10 +27,12 @@ export default async function DashboardPage({
   const currency = active.business.currency;
 
   const range = days === 0 ? todayRange(timezone) : rangeForDays(days);
-  const [metrics, activity] = await Promise.all([
+  const [metrics, activity, counts] = await Promise.all([
     getDashboardMetrics(active.business.id, range),
     getRecentActivity(active.business.id),
+    countOpenWork(active.business.id),
   ]);
+  const openIssues = counts.openIssues;
 
   const rangeLabel = days === 0 ? 'Today' : `Last ${days} days`;
 
@@ -59,6 +62,19 @@ export default async function DashboardPage({
       />
 
       <div className="flex flex-col gap-5 px-6 py-5">
+        {openIssues > 0 && can(role, 'system_health:view') ? (
+          <Link
+            href="/settings/health"
+            className="flex items-center justify-between gap-3 rounded-md bg-hot-50 px-3 py-2.5 text-[13px] text-hot-700 transition-colors hover:bg-hot-100"
+          >
+            <span>
+              {openIssues} unresolved {openIssues === 1 ? 'issue' : 'issues'} need looking at —
+              enquiries may be going unanswered.
+            </span>
+            <span className="shrink-0 font-medium underline underline-offset-2">Open health</span>
+          </Link>
+        ) : null}
+
         {params.denied ? (
           <p className="rounded-md bg-warm-50 px-3 py-2 text-[13px] text-warm-700">
             Your role does not have access to that page.

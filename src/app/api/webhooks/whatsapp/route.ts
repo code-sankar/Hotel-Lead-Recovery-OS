@@ -11,6 +11,7 @@ import type { InboundMessageEvent, InboundStatusEvent } from '@/lib/messaging/ty
 import type { MessageType } from '@/types/domain';
 import { enqueue } from '@/lib/queue';
 import { clientKeyFrom, rateLimit } from '@/lib/security/rate-limit';
+import { logError, logWarning } from '@/lib/monitoring/logger';
 
 /**
  * Meta WhatsApp Cloud API webhook.
@@ -107,17 +108,38 @@ export async function POST(request: NextRequest) {
   const business = await store.findBusinessByPhoneNumberId(phoneNumberId);
   if (!business) {
     // Unknown number: acknowledge so Meta stops retrying, but do nothing.
-    console.warn(`[whatsapp] webhook for unmapped phone_number_id ${phoneNumberId}`);
+    // No tenant means no row anyone could be shown; the log line is the trace.
+    console.warn(
+      JSON.stringify({
+        level: 'warning',
+        scope: 'whatsapp.webhook',
+        message: 'Webhook for a phone_number_id that is not mapped to any hotel.',
+        phoneNumberId,
+      }),
+    );
     return NextResponse.json({ received: true, mapped: false });
   }
 
   const integration = await store.getWhatsAppIntegration(business.id);
   const appSecret = integration?.app_secret ?? env.WHATSAPP_APP_SECRET;
   if (!appSecret) {
-    console.error(`[whatsapp] no app secret configured for business ${business.id}`);
+    await logError({
+      scope: 'whatsapp.webhook',
+      businessId: business.id,
+      message: 'No WhatsApp app secret is configured, so incoming messages cannot be verified.',
+      detail: { phoneNumberId },
+    });
     return NextResponse.json({ error: 'not_configured' }, { status: 403 });
   }
   if (!verifyWebhookSignature(rawBody, signature, appSecret)) {
+    // Either the app secret is wrong or something is impersonating Meta. Both
+    // are worth surfacing, because inbound enquiries stop either way.
+    await logWarning({
+      scope: 'whatsapp.webhook',
+      businessId: business.id,
+      message: 'Rejected a webhook whose signature did not match the configured app secret.',
+      detail: { phoneNumberId, hasSignature: Boolean(signature) },
+    });
     return NextResponse.json({ error: 'invalid_signature' }, { status: 401 });
   }
 
@@ -146,7 +168,15 @@ export async function POST(request: NextRequest) {
       try {
         await task();
       } catch (error) {
-        console.error('[whatsapp] webhook processing failed', error);
+        // The 200 has already gone to Meta, so this is the only trace there
+        // would otherwise be of a dropped enquiry.
+        await logError({
+          scope: 'whatsapp.webhook',
+          businessId: business.id,
+          error,
+          message: 'An inbound WhatsApp message could not be processed.',
+          detail: { phoneNumberId },
+        });
       }
     }
   });

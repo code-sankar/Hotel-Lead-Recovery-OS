@@ -88,6 +88,8 @@ reason.
 | Follow-up service | `lib/followups/service.ts` | Applies decisions to the database and provider |
 | Analytics | `lib/analytics/metrics.ts` | Dashboard metrics and revenue attribution |
 | Queue | `lib/queue/` | BullMQ, with an inline development fallback |
+| Team | `lib/team/` | Invite tokens and the join flow |
+| Monitoring | `lib/monitoring/` | Fingerprinting and the durable event log |
 
 ## Idempotency
 
@@ -124,3 +126,35 @@ is designed out at four levels:
 The webhook does no AI work. It verifies, records and enqueues, then returns 200 —
 anything slower risks a Meta retry and a duplicate reply. With Redis, work moves to
 the worker; without it, `after()` runs the job once the response has been sent.
+
+## Invitations
+
+An owner creates an invite and receives a link **once**. The database stores only
+a SHA-256 hash of the token, computed in the application, so a leaked row cannot
+be redeemed and the plaintext never reaches Postgres logs.
+
+The recipient is by definition not yet a member, so they cannot read the invite
+row under RLS. Two `SECURITY DEFINER` functions bridge that:
+`preview_business_invite` (hotel name, invited address, status) and
+`accept_business_invite`, which re-checks the hash, the expiry, the revocation
+and that the signed-in user's email matches the invited address — a forwarded
+link cannot hand access to a stranger.
+
+`/invite/[token]` is on the proxy's public path list, because the recipient
+usually has no account yet.
+
+## Monitoring
+
+`logError` / `logWarning` write two places: a structured JSON console line for
+whatever log drain the host provides, and a durable row so a 2am failure is
+visible to someone who was not reading logs.
+
+Events are deduplicated by a fingerprint of scope plus a normalised message —
+ids, numbers, URLs and quoted values are replaced with placeholders — so a
+provider outage that fails two thousand times is one row saying `2000`. A
+recurrence reopens a row that was marked resolved.
+
+Recording never throws. Monitoring that breaks the thing it monitors is worse
+than no monitoring, so every failure inside the logger is swallowed after a
+console line, and events without a known tenant stay console-only rather than
+being written somewhere nobody can read them.

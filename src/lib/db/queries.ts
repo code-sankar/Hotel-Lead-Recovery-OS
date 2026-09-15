@@ -329,9 +329,9 @@ export async function listTeamMembers(businessId: string): Promise<
 
 export async function countOpenWork(
   businessId: string,
-): Promise<{ conversations: number; followUpsDue: number }> {
+): Promise<{ conversations: number; followUpsDue: number; openIssues: number }> {
   const supabase = await createServerSupabase();
-  const [conversations, followUps] = await Promise.all([
+  const [conversations, followUps, issues] = await Promise.all([
     supabase
       .from('conversations')
       .select('id', { count: 'exact', head: true })
@@ -344,10 +344,16 @@ export async function countOpenWork(
       .eq('business_id', businessId)
       .eq('status', 'scheduled')
       .lte('scheduled_for', new Date().toISOString()),
+    supabase
+      .from('system_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('business_id', businessId)
+      .is('resolved_at', null),
   ]);
 
   return {
     conversations: conversations.count ?? 0,
     followUpsDue: followUps.count ?? 0,
+    openIssues: issues.count ?? 0,
   };
 }
