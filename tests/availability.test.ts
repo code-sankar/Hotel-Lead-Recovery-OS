@@ -3,7 +3,6 @@ import {
   calculateAvailability,
   nightsBetween,
   normaliseStay,
-  summariseAvailability,
   type AvailabilityRoom,
 } from '@/lib/availability/calculate';
 
@@ -190,25 +189,5 @@ describe('calculateAvailability', () => {
     });
     expect(snapshot.rooms.find((r) => r.roomId === 'deluxe')?.unitsFree).toBe(4);
     expect(snapshot.rooms.find((r) => r.roomId === 'executive')?.available).toBe(false);
-  });
-});
-
-describe('summariseAvailability', () => {
-  it('lists what is free', () => {
-    expect(summariseAvailability(query())).toContain('Deluxe Room: 4 free');
-  });
-
-  it('says plainly when nothing is free', () => {
-    const snapshot = query({
-      overrides: ROOMS.flatMap((room) =>
-        ['2026-09-15', '2026-09-16'].map((date) => ({
-          roomId: room.id,
-          date,
-          unitsAvailable: null,
-          closed: true,
-        })),
-      ),
-    });
-    expect(summariseAvailability(snapshot)).toBe('Nothing free for 2026-09-15 to 2026-09-17.');
   });
 });

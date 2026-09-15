@@ -226,6 +226,103 @@ describe('inbound pipeline', () => {
   });
 });
 
+describe('conversation state', () => {
+  it('reopens a conversation the team had marked resolved', async () => {
+    const store = new MemoryStore();
+    const { business } = seedBusiness(store);
+    const deps = makeDeps(store);
+
+    await processInboundMessage(deps, {
+      businessId: business.id,
+      phoneNumber: PHONE,
+      text: 'What are your rates?',
+      providerMessageId: 'wamid.r1',
+      now: new Date('2026-09-07T10:00:00Z'),
+    });
+
+    const conversation = store.conversations[0]!;
+    conversation.status = 'resolved';
+    conversation.unread_count = 0;
+
+    // A returning guest is exactly the lead worth catching, so the thread must
+    // come back into the unread inbox rather than staying closed.
+    await processInboundMessage(deps, {
+      businessId: business.id,
+      phoneNumber: PHONE,
+      text: 'Actually, can I still book for 15 Sept?',
+      providerMessageId: 'wamid.r2',
+      now: new Date('2026-09-09T10:00:00Z'),
+    });
+
+    expect(conversation.status).toBe('open');
+    expect(conversation.unread_count).toBe(1);
+  });
+
+  it('marks the incoming message as read with the provider', async () => {
+    const store = new MemoryStore();
+    const { business } = seedBusiness(store);
+
+    const readReceipts: string[] = [];
+    const provider = new DemoMessagingProvider();
+    const spy = {
+      ...provider,
+      channel: provider.channel,
+      mode: provider.mode,
+      sendTextMessage: provider.sendTextMessage.bind(provider),
+      sendTemplateMessage: provider.sendTemplateMessage.bind(provider),
+      processWebhook: provider.processWebhook.bind(provider),
+      markMessageRead: async (id: string) => {
+        readReceipts.push(id);
+      },
+    };
+
+    await processInboundMessage(
+      { store, ai: new RulesAiProvider(), resolveProvider: async () => spy },
+      {
+        businessId: business.id,
+        phoneNumber: PHONE,
+        text: 'Do you have rooms on 20 Sept?',
+        providerMessageId: 'wamid.read1',
+        now: new Date('2026-09-07T10:00:00Z'),
+      },
+    );
+
+    expect(readReceipts).toEqual(['wamid.read1']);
+  });
+
+  it('does not fail the enquiry when the read receipt fails', async () => {
+    const store = new MemoryStore();
+    const { business } = seedBusiness(store);
+    const provider = new DemoMessagingProvider();
+    const spy = {
+      ...provider,
+      channel: provider.channel,
+      mode: provider.mode,
+      sendTextMessage: provider.sendTextMessage.bind(provider),
+      sendTemplateMessage: provider.sendTemplateMessage.bind(provider),
+      processWebhook: provider.processWebhook.bind(provider),
+      markMessageRead: async () => {
+        throw new Error('Meta rejected the read receipt');
+      },
+    };
+
+    const result = await processInboundMessage(
+      { store, ai: new RulesAiProvider(), resolveProvider: async () => spy },
+      {
+        businessId: business.id,
+        phoneNumber: PHONE,
+        text: 'Any rooms for 20 Sept?',
+        providerMessageId: 'wamid.read2',
+        now: new Date('2026-09-07T10:00:00Z'),
+      },
+    );
+
+    // A courtesy receipt must never cost the hotel an enquiry.
+    expect(result.outcome).toBe('processed');
+    expect(result.replyText).toBeTruthy();
+  });
+});
+
 describe('availability', () => {
   it('answers with real numbers once dates are known, and the guardrails accept it', async () => {
     const store = new MemoryStore();

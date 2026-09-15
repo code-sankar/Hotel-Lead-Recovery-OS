@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 /**
  * Invite tokens.
@@ -35,10 +35,4 @@ export function inviteExpiryFrom(now: Date = new Date(), days = INVITE_TTL_DAYS)
 
 export function inviteUrl(appUrl: string, token: string): string {
   return `${appUrl.replace(/\/+$/, '')}/invite/${token}`;
-}
-
-/** Constant-time comparison, for anywhere two hashes are checked in app code. */
-export function hashesMatch(a: string, b: string): boolean {
-  if (a.length !== b.length || a.length === 0) return false;
-  return timingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
 }

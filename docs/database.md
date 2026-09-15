@@ -14,6 +14,16 @@ Migrations, applied in order:
 6. `20250301000100_system_events.sql` — the operational event log
 7. `20250301000200_alerting.sql` — alert destinations and the alert throttle
 
+All seven have been applied in order against a stock PostgreSQL 16 with a
+minimal stand-in for Supabase's `auth` schema, and the behaviour below — tenant
+isolation, the role boundaries, and each `SECURITY DEFINER` function — was
+exercised against that database rather than reasoned about.
+
+One caveat when testing RLS by hand: an `UPDATE` filtered out by a policy
+affects zero rows and does **not** raise. "Denied" therefore means *no rows
+changed*, not *no error* — measuring the wrong one makes a working policy look
+broken and a broken one look fine.
+
 ## Tenancy
 
 ```

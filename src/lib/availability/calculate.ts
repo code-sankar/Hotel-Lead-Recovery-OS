@@ -179,15 +179,3 @@ export function calculateAvailability(query: AvailabilityQuery): AvailabilitySna
     anyAvailable: rooms.some((room) => room.available),
   };
 }
-
-/** One-line summary used in the lead panel and in AI context. */
-export function summariseAvailability(snapshot: AvailabilitySnapshot): string {
-  if (snapshot.nights === 0) return 'No valid dates to check.';
-  const available = snapshot.rooms.filter((room) => room.available);
-  if (available.length === 0) {
-    return `Nothing free for ${snapshot.checkIn} to ${snapshot.checkOut}.`;
-  }
-  return available
-    .map((room) => `${room.roomName}: ${room.unitsFree} free`)
-    .join(', ');
-}

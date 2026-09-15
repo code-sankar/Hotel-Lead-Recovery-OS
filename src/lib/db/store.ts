@@ -62,7 +62,6 @@ export interface Store {
   createLead(input: CreateLeadInput): Promise<Lead>;
   updateLead(businessId: string, leadId: string, patch: Partial<Lead>): Promise<Lead>;
   insertLeadEvent(input: InsertLeadEventInput): Promise<LeadEvent>;
-  listLeadEvents(businessId: string, leadId: string, limit?: number): Promise<LeadEvent[]>;
 
   // --- follow-ups ----------------------------------------------------------
   listFollowUpRules(businessId: string): Promise<FollowUpRule[]>;

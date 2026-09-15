@@ -410,20 +410,6 @@ export class SupabaseStore implements Store {
     return data as LeadEvent;
   }
 
-  async listLeadEvents(businessId: string, leadId: string, limit = 50): Promise<LeadEvent[]> {
-    const { data, error } = await this.client
-      .from('lead_events')
-      .select('*')
-      .eq('business_id', businessId)
-      .eq('lead_id', leadId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (error) throw dbError('listLeadEvents', error);
-    return (data ?? []) as LeadEvent[];
-  }
-
-  // --- follow-ups ----------------------------------------------------------
-
   async listFollowUpRules(businessId: string): Promise<FollowUpRule[]> {
     const { data, error } = await this.client
       .from('follow_up_rules')

@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { after } from 'next/server';
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { requireBusiness } from '@/lib/auth/session';
@@ -39,6 +40,20 @@ export default async function ConversationPage({
 
   // The same lookup the assistant is held to, so staff see exactly what it saw.
   const supabase = await createServerSupabase();
+
+  // Reading a conversation is what clears its badge. Previously the count only
+  // reset on take-over or resolve, so the inbox stayed permanently unread.
+  // The client is built here, during render, because `after` in a Server
+  // Component may not touch request APIs such as cookies().
+  if (detail.conversation.unread_count > 0) {
+    after(async () => {
+      await supabase
+        .from('conversations')
+        .update({ unread_count: 0 })
+        .eq('business_id', active.business.id)
+        .eq('id', detail.conversation.id);
+    });
+  }
   const { data: roomRows } = await supabase
     .from('rooms')
     .select('*')

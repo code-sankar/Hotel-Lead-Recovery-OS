@@ -288,13 +288,6 @@ export class MemoryStore implements Store {
     return event;
   }
 
-  async listLeadEvents(businessId: string, leadId: string, limit = 50): Promise<LeadEvent[]> {
-    return this.leadEvents
-      .filter((e) => e.business_id === businessId && e.lead_id === leadId)
-      .slice(-limit)
-      .reverse();
-  }
-
   async listFollowUpRules(businessId: string): Promise<FollowUpRule[]> {
     return this.followUpRules
       .filter((r) => r.business_id === businessId)

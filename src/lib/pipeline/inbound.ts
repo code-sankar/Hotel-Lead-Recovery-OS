@@ -106,12 +106,35 @@ export async function processInboundMessage(
   });
 
   await store.updateConversation(businessId, conversation.id, {
+    // A guest writing again reopens the thread. Without this, a conversation
+    // someone marked resolved stays resolved and the returning guest — exactly
+    // the lead worth catching — never shows up in the unread count.
+    status: 'open',
     last_inbound_at: now.toISOString(),
     last_message_at: now.toISOString(),
     last_message_preview: previewOf(input.text),
     unread_count: conversation.unread_count + 1,
   });
   conversation.last_inbound_at = now.toISOString();
+  conversation.status = 'open';
+
+  // Resolved once and reused for the reply. Doing it here also lets the guest
+  // see the message was received, rather than sitting on a single grey tick.
+  const provider = await deps.resolveProvider(businessId);
+  if (input.providerMessageId) {
+    try {
+      await provider.markMessageRead(input.providerMessageId);
+    } catch (error) {
+      // A read receipt is a courtesy; never fail an enquiry over one.
+      await logWarning({
+        scope: 'messaging.outbound',
+        businessId,
+        error,
+        message: 'Could not mark an incoming message as read.',
+        detail: { conversationId: conversation.id },
+      });
+    }
+  }
 
   await store.insertAnalyticsEvent({
     businessId,
@@ -302,8 +325,6 @@ export async function processInboundMessage(
       note: gate.note,
     };
   }
-
-  const provider = await deps.resolveProvider(businessId);
 
   // 11. Escalation short-circuits generation: the hotel's own escalation
   // message is sent verbatim and the conversation moves to human handling.

@@ -3,7 +3,6 @@ import {
   INVITE_TOKEN_LENGTH,
   generateInviteToken,
   hashInviteToken,
-  hashesMatch,
   inviteExpiryFrom,
   inviteUrl,
   isWellFormedInviteToken,
@@ -57,13 +56,5 @@ describe('invite tokens', () => {
   it('builds a link without doubling the slash', () => {
     expect(inviteUrl('https://app.example.com', 'abc')).toBe('https://app.example.com/invite/abc');
     expect(inviteUrl('https://app.example.com/', 'abc')).toBe('https://app.example.com/invite/abc');
-  });
-
-  it('compares hashes safely', () => {
-    const hash = hashInviteToken('a');
-    expect(hashesMatch(hash, hash)).toBe(true);
-    expect(hashesMatch(hash, hashInviteToken('b'))).toBe(false);
-    expect(hashesMatch(hash, '')).toBe(false);
-    expect(hashesMatch('', '')).toBe(false);
   });
 });

@@ -199,7 +199,10 @@ settings page shows only whether a value exists.
    `http://localhost:3000/auth/callback` as a redirect URL.
 
 Seven migrations apply in filename order; the later four add room availability,
-staff invitations, the operational event log and failure alerting.
+staff invitations, the operational event log and failure alerting. They have been
+executed end to end against a stock PostgreSQL 16 with a minimal Supabase `auth`
+shim: provisioning, tenant isolation, the role boundaries and every RPC were
+exercised there.
 
 See [`docs/database.md`](docs/database.md) for the schema and the RLS model.
 
@@ -364,6 +367,9 @@ These are deliberate MVP boundaries, not oversights:
 - **Invitations are links, not emails.** The app does not send email, so an owner
   creates an invite and shares the link themselves — which for a WhatsApp-first
   product is usually the right channel anyway. Nothing here needs SMTP.
+- **`analytics_events` is written but barely read.** Reporting is computed from
+  `leads`, `messages` and `lead_events` instead. The table is a forward-looking
+  stream, not a source the dashboard depends on.
 - **Alerting is push, not paging.** Failures are pushed to a webhook (Slack,
   Discord or anything that takes a JSON POST). There is no escalation, no
   on-call rotation and no acknowledgement — if nobody reads the channel, nobody

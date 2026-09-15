@@ -202,7 +202,7 @@ export class OpenAiProvider implements AiProvider {
 
     const parsed = analysisResponseSchema.parse(JSON.parse(response.output_text));
 
-    return {
+    const analysis: AiAnalysis = {
       intent: parsed.intent,
       confidence: parsed.confidence,
       leadTemperature: parsed.lead_temperature as LeadTemperature,
@@ -212,6 +212,11 @@ export class OpenAiProvider implements AiProvider {
       requiresFollowUp: parsed.requires_follow_up,
       suggestedAction: parsed.suggested_action,
     };
+
+    // When the model is unsure, prefer the deterministic classifier: an intent
+    // nobody can corroborate drives scoring and escalation just as hard as one
+    // everybody agrees on.
+    return corroborateIntent(input.message, analysis);
   }
 
   async reply(input: ReplyInput): Promise<ReplyOutput> {
