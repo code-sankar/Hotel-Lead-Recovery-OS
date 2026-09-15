@@ -54,6 +54,12 @@ this interface rather than on Supabase. Two implementations exist:
 Read paths that serve the UI do **not** go through the port. They use the
 user-session Supabase client (`src/lib/db/queries.ts`) where RLS is the boundary.
 
+Those functions take an optional client as their last argument. Application code
+omits it and gets the request-scoped session client; the integration suite passes
+one pointed at a real PostgREST, which is the only way to prove that an embed
+like `customers!inner(...)` resolves and that an RPC's argument names match.
+`./scripts/local-stack.sh up` brings that stack up.
+
 ### `MessagingProvider` — `src/lib/messaging/types.ts`
 
 ```ts

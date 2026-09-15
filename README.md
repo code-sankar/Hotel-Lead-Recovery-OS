@@ -307,10 +307,28 @@ A complete demo run:
 ```bash
 npm run typecheck
 npm run lint
-npm test
+npm test              # hermetic; the integration suite skips itself
 ```
 
-261 tests across 16 files:
+The default run needs nothing external. To also exercise the **PostgREST layer**
+— the embeds, the filters and the RPC argument names, which an in-memory store
+cannot reach — bring up a local PostgreSQL + PostgREST that speaks the same
+dialect as Supabase:
+
+```bash
+./scripts/local-stack.sh up        # applies every migration, prints the URL
+LEADSTAY_PGRST_URL=http://127.0.0.1:55433 npm run test:integration
+./scripts/local-stack.sh down
+```
+
+It needs `postgresql-16` server binaries and a `postgrest` binary on `PATH` or
+at `.local/postgrest`; neither is a project dependency.
+`supabase/local/supabase-shim.sql` is the test-only stand-in for Supabase's
+`auth` schema — it mirrors `auth.uid()`, `service_role`'s `BYPASSRLS`, and the
+default table privileges, so a migration's explicit `REVOKE` is not undone.
+
+261 hermetic tests across 16 files, plus 15 integration tests that run against
+real PostgREST:
 
 | File | Covers |
 | --- | --- |
@@ -330,6 +348,7 @@ npm test
 | `invites.test.ts` | Invite token shape, hashing, expiry and link building |
 | `monitoring.test.ts` | Fingerprint collapsing and the shape of a recorded event |
 | `alerts.test.ts` | Alert payloads, level filtering, signing and delivery failures |
+| `integration/postgrest.test.ts` | The real PostgREST layer: embeds, filters, RPCs, security views, isolation over HTTP |
 
 The integration suite (`tests/pipeline.test.ts`) runs the real inbound pipeline
 and follow-up engine against an in-memory `Store`, covering: enquiry → lead →

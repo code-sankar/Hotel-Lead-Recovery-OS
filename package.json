@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "worker": "tsx --conditions=react-server src/workers/main.ts",
     "db:seed": "tsx --conditions=react-server scripts/seed.ts",
-    "followups:run": "tsx --conditions=react-server scripts/run-due-followups.ts"
+    "followups:run": "tsx --conditions=react-server scripts/run-due-followups.ts",
+    "test:integration": "vitest run tests/integration"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.2.6",

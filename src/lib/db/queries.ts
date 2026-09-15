@@ -11,7 +11,20 @@ import type {
   Profile,
   StaffNote,
 } from '@/types/domain';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createServerSupabase } from './server-client';
+
+/**
+ * Read models accept an optional client so the PostgREST layer — the embeds,
+ * the filters, the RPC argument names — can be exercised against a real server
+ * in integration tests. Application code omits it and gets the request-scoped,
+ * RLS-enforcing session client.
+ */
+export type QueryClient = SupabaseClient;
+
+async function clientOr(client?: QueryClient): Promise<QueryClient> {
+  return client ?? ((await createServerSupabase()) as QueryClient);
+}
 
 /**
  * Read models for the UI.
@@ -31,11 +44,14 @@ type ProfileSummary = Pick<Profile, 'id' | 'full_name' | 'email'>;
  * auth.users, so PostgREST has no relationship to embed public.profiles across.
  * One extra query keeps the read models correct without reshaping the schema.
  */
-async function loadProfiles(ids: Array<string | null>): Promise<Map<string, ProfileSummary>> {
+async function loadProfiles(
+  ids: Array<string | null>,
+  client?: QueryClient,
+): Promise<Map<string, ProfileSummary>> {
   const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
   if (unique.length === 0) return new Map();
 
-  const supabase = await createServerSupabase();
+  const supabase = await clientOr(client);
   const { data } = await supabase.from('profiles').select('id, full_name, email').in('id', unique);
   return new Map(((data ?? []) as ProfileSummary[]).map((profile) => [profile.id, profile]));
 }
@@ -49,8 +65,9 @@ export interface ConversationListItem {
 export async function listConversations(
   businessId: string,
   options: { search?: string; mode?: string; limit?: number } = {},
+  client?: QueryClient,
 ): Promise<ConversationListItem[]> {
-  const supabase = await createServerSupabase();
+  const supabase = await clientOr(client);
   let query = supabase
     .from('conversations')
     .select(
@@ -104,8 +121,9 @@ export interface ConversationDetail {
 export async function getConversationDetail(
   businessId: string,
   conversationId: string,
+  client?: QueryClient,
 ): Promise<ConversationDetail | null> {
-  const supabase = await createServerSupabase();
+  const supabase = await clientOr(client);
 
   const { data: conversation, error } = await supabase
     .from('conversations')
@@ -163,7 +181,7 @@ export async function getConversationDetail(
     : [{ data: [] }, { data: [] }, { data: [] }];
 
   const noteRows = (notes.data ?? []) as StaffNote[];
-  const authors = await loadProfiles(noteRows.map((note) => note.author_id));
+  const authors = await loadProfiles(noteRows.map((note) => note.author_id), supabase);
 
   return {
     conversation: conv,
@@ -195,8 +213,9 @@ export interface LeadFilters {
 export async function listLeads(
   businessId: string,
   filters: LeadFilters = {},
+  client?: QueryClient,
 ): Promise<LeadListItem[]> {
-  const supabase = await createServerSupabase();
+  const supabase = await clientOr(client);
   let query = supabase
     .from('leads')
     .select('*, customers!inner(id, name, phone_number)')
@@ -233,7 +252,7 @@ export async function listLeads(
 
   // profiles is joined in a second query: assigned_staff_id references
   // auth.users, which PostgREST cannot embed public.profiles across.
-  const assignees = await loadProfiles(rows.map((row) => row.assigned_staff_id));
+  const assignees = await loadProfiles(rows.map((row) => row.assigned_staff_id), supabase);
 
   const items = rows.map(({ customers, ...lead }) => ({
     ...(lead as Lead),
@@ -259,8 +278,9 @@ export interface FollowUpListItem extends FollowUp {
 export async function listFollowUps(
   businessId: string,
   status: string = 'scheduled',
+  client?: QueryClient,
 ): Promise<FollowUpListItem[]> {
-  const supabase = await createServerSupabase();
+  const supabase = await clientOr(client);
   let query = supabase
     .from('follow_ups')
     .select(
@@ -307,10 +327,13 @@ export async function listFollowUps(
   }));
 }
 
-export async function listTeamMembers(businessId: string): Promise<
+export async function listTeamMembers(
+  businessId: string,
+  client?: QueryClient,
+): Promise<
   Array<{ userId: string; role: string; profile: Pick<Profile, 'id' | 'full_name' | 'email'> | null }>
 > {
-  const supabase = await createServerSupabase();
+  const supabase = await clientOr(client);
   const { data, error } = await supabase
     .from('business_members')
     .select('user_id, role')
@@ -318,7 +341,7 @@ export async function listTeamMembers(businessId: string): Promise<
   if (error) throw new Error(`Could not load the team: ${error.message}`);
 
   const rows = (data ?? []) as Array<{ user_id: string; role: string }>;
-  const profiles = await loadProfiles(rows.map((row) => row.user_id));
+  const profiles = await loadProfiles(rows.map((row) => row.user_id), supabase);
 
   return rows.map((row) => ({
     userId: row.user_id,
@@ -329,8 +352,9 @@ export async function listTeamMembers(businessId: string): Promise<
 
 export async function countOpenWork(
   businessId: string,
+  client?: QueryClient,
 ): Promise<{ conversations: number; followUpsDue: number; openIssues: number }> {
-  const supabase = await createServerSupabase();
+  const supabase = await clientOr(client);
   const [conversations, followUps, issues] = await Promise.all([
     supabase
       .from('conversations')
