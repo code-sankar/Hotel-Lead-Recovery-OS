@@ -189,6 +189,15 @@ export const updateLeadSchema = z.object({
   intent: z.enum(LEAD_INTENTS as unknown as [string, ...string[]]).optional(),
 });
 
+export const alertChannelSchema = z.object({
+  enabled: z.boolean(),
+  // Blank keeps whatever is stored; the UI never reads a saved URL back.
+  webhookUrl: z.string().trim().url('Enter the full https:// webhook URL.').optional().or(z.literal('')),
+  signingSecret: z.string().trim().max(200).optional().or(z.literal('')),
+  minLevel: z.enum(['error', 'warning']),
+  clearWebhook: z.boolean().default(false),
+});
+
 export const inviteStaffSchema = z.object({
   email: emailSchema,
   role: z.enum(['owner', 'manager', 'staff']),

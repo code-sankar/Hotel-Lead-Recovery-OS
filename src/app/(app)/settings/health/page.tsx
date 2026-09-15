@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import { requireCapability } from '@/lib/auth/session';
 import { createServerSupabase } from '@/lib/db/server-client';
-import { hasServiceRoleKey, hasRedis } from '@/lib/env';
-import type { SystemEvent } from '@/types/domain';
+import { hasOperatorAlerting, hasRedis, hasServiceRoleKey } from '@/lib/env';
+import type { AlertChannelStatus, SystemEvent } from '@/types/domain';
 import { SettingsSection } from '@/components/settings/settings-section';
 import { HealthLog } from '@/components/settings/health-log';
+import { AlertSettings } from '@/components/settings/alert-settings';
 import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = { title: 'Health' };
@@ -13,15 +14,24 @@ export default async function HealthSettingsPage() {
   const { active } = await requireCapability('system_health:view');
   const supabase = await createServerSupabase();
 
-  const { data } = await supabase
-    .from('system_events')
-    .select('*')
-    .eq('business_id', active.business.id)
-    .order('resolved_at', { ascending: true, nullsFirst: true })
-    .order('last_seen_at', { ascending: false })
-    .limit(50);
+  const [{ data }, { data: channelRow }] = await Promise.all([
+    supabase
+      .from('system_events')
+      .select('*')
+      .eq('business_id', active.business.id)
+      .order('resolved_at', { ascending: true, nullsFirst: true })
+      .order('last_seen_at', { ascending: false })
+      .limit(50),
+    // The non-secret view: a webhook URL is a credential and never comes back.
+    supabase
+      .from('alert_channel_status')
+      .select('*')
+      .eq('business_id', active.business.id)
+      .maybeSingle(),
+  ]);
 
   const events = (data ?? []) as SystemEvent[];
+  const channel = (channelRow as AlertChannelStatus | null) ?? null;
   const open = events.filter((event) => !event.resolved_at);
 
   return (
@@ -43,6 +53,18 @@ export default async function HealthSettingsPage() {
         />
       </SettingsSection>
 
+      <SettingsSection
+        title="Alerts"
+        description="Where failures are pushed, so nobody has to remember to check this page."
+      >
+        <AlertSettings
+          businessId={active.business.id}
+          channel={channel}
+          timezone={active.business.timezone}
+          operatorAlertingOn={hasOperatorAlerting()}
+        />
+      </SettingsSection>
+
       <SettingsSection title="Setup" description="Whether the parts that run in the background are configured.">
         <dl className="flex flex-col divide-y divide-ink-100">
           <Row
@@ -56,6 +78,12 @@ export default async function HealthSettingsPage() {
             ok={hasServiceRoleKey()}
             okText="Set, so webhooks, the worker and this log can write."
             warnText="Not set. Incoming WhatsApp messages cannot be processed and nothing can be recorded here."
+          />
+          <Row
+            label="Failure alerts"
+            ok={Boolean(channel?.enabled && channel.has_webhook_url)}
+            okText={`Pushed to ${channel?.destination ?? 'your channel'} when something breaks.`}
+            warnText="Nothing is pushed. Failures appear on this page, but only if someone looks."
           />
           <Row
             label="WhatsApp"

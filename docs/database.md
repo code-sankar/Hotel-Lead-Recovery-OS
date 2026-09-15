@@ -12,6 +12,7 @@ Migrations, applied in order:
 4. `20250201000000_room_availability.sql` — inventory, overrides, bookings
 5. `20250301000000_staff_invites.sql` — invitations and the accept RPC
 6. `20250301000100_system_events.sql` — the operational event log
+7. `20250301000200_alerting.sql` — alert destinations and the alert throttle
 
 ## Tenancy
 
@@ -63,7 +64,8 @@ optional `business_id`, because an event may arrive before a tenant is resolved.
 | `analytics_events` | Lightweight metric stream | |
 | `webhook_events` | Provider receipts | Unique `(provider, provider_event_id)` |
 | `business_invites` | Pending and used invitations | Stores only a token **hash**; one live invite per email per hotel |
-| `system_events` | Operational failures, deduplicated and counted | Unique `(business_id, fingerprint)` |
+| `system_events` | Operational failures, deduplicated and counted | Unique `(business_id, fingerprint)`; `last_alerted_at` drives the cooldown |
+| `alert_channels` | Where a hotel's failures are pushed | **No RLS policies**; the webhook URL is a credential |
 
 ## Enums
 
@@ -100,6 +102,7 @@ public.has_business_role(business_id, member_role[]) → boolean
 | `room_availability` | any member | owner, manager |
 | `business_invites` | owner | owner (the invitee uses `SECURITY DEFINER` RPCs) |
 | `system_events` | any member | owner, manager (resolve only; writes go through an RPC) |
+| `alert_channels` | **nobody** (settings reads `alert_channel_status`) | service role only |
 | Telemetry (`ai_actions`, `analytics_events`) | any member | service role only |
 | `whatsapp_integrations` | **nobody** (no policies) | service role only |
 | `webhook_events` | **nobody** | service role only |

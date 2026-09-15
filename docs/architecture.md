@@ -158,3 +158,43 @@ Recording never throws. Monitoring that breaks the thing it monitors is worse
 than no monitoring, so every failure inside the logger is swallowed after a
 console line, and events without a known tenant stay console-only rather than
 being written somewhere nobody can read them.
+
+## Alerting
+
+Recorded failures are pushed to a plain outbound webhook. Slack and Discord
+incoming webhooks work with no configuration — the payload carries both `text`
+and `content` because they read different keys — and so does any endpoint that
+accepts a JSON POST. Nothing here needs an account anywhere.
+
+WhatsApp is pointedly **not** the channel. The thing most likely to be broken is
+WhatsApp, and an alert that travels over the failure cannot report it.
+
+Two destinations, resolved independently for each event:
+
+| Channel | Configured in | Scope |
+| --- | --- | --- |
+| Hotel | Settings → Health | That hotel's failures |
+| Operator | `ALERT_WEBHOOK_URL` | Every hotel |
+
+A webhook URL is a credential — anyone holding it can post as the integration —
+so `alert_channels` is treated exactly like `whatsapp_integrations`: no policies
+for `authenticated`, and settings reads a non-secret view that reports *which*
+service is configured without returning the URL.
+
+### Not sending two thousand messages for one outage
+
+The throttle decision is made inside the same statement that records the
+occurrence:
+
+```
+alert if  alert_eligible          -- a channel exists that accepts this level
+      and (first occurrence of this fingerprint
+           or last_alerted_at is older than the cooldown)
+```
+
+`record_system_event` stamps `last_alerted_at` in that same statement, so two
+workers hitting the same failure simultaneously cannot both decide to alert.
+Eligibility is computed **before** the call, so an event filtered out by level
+never consumes the cooldown for one that would have qualified. A storm of
+*distinct* failures is caught separately by a per-process cap of ten alerts a
+minute.

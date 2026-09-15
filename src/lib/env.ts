@@ -30,6 +30,14 @@ const serverSchema = z.object({
     .optional()
     .transform((v) => v !== 'false'),
   CRON_SECRET: z.string().min(1).optional(),
+  /**
+   * Operator alerting. This fires for EVERY hotel, so it is the one that pages
+   * whoever runs the service; hotels configure their own channel in settings.
+   */
+  ALERT_WEBHOOK_URL: z.string().url().optional(),
+  ALERT_WEBHOOK_SECRET: z.string().min(1).optional(),
+  ALERT_MIN_LEVEL: z.enum(['error', 'warning']).default('error'),
+  ALERT_COOLDOWN_MINUTES: z.coerce.number().int().min(0).max(1440).default(60),
 });
 
 export type PublicEnv = z.infer<typeof publicSchema>;
@@ -113,4 +121,8 @@ export function hasOpenAI(): boolean {
 
 export function hasRedis(): boolean {
   return Boolean(serverEnv().REDIS_URL);
+}
+
+export function hasOperatorAlerting(): boolean {
+  return Boolean(serverEnv().ALERT_WEBHOOK_URL);
 }

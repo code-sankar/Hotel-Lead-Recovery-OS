@@ -168,6 +168,10 @@ Then:
 | `WHATSAPP_APP_SECRET` | no | Fallback webhook signature secret |
 | `WHATSAPP_API_VERSION` | no | Defaults to `v21.0` |
 | `REDIS_URL` | no | Enables BullMQ; without it jobs run inline (development only) |
+| `ALERT_WEBHOOK_URL` | no | Operator alerts across every hotel — Slack, Discord, or any JSON endpoint |
+| `ALERT_WEBHOOK_SECRET` | no | Signs deliveries with `X-LeadStay-Signature` for a custom receiver |
+| `ALERT_MIN_LEVEL` | no | `error` (default) or `warning` |
+| `ALERT_COOLDOWN_MINUTES` | no | At most one alert per failure per window; defaults to 60 |
 
 Per-hotel WhatsApp credentials entered in **Settings → WhatsApp** take precedence
 over the environment values. Secrets are write-only in the UI: once stored, the
@@ -194,8 +198,8 @@ settings page shows only whether a value exists.
 4. Under **Authentication → URL Configuration**, add
    `http://localhost:3000/auth/callback` as a redirect URL.
 
-Six migrations apply in filename order; the later three add room availability,
-staff invitations and the operational event log.
+Seven migrations apply in filename order; the later four add room availability,
+staff invitations, the operational event log and failure alerting.
 
 See [`docs/database.md`](docs/database.md) for the schema and the RLS model.
 
@@ -303,7 +307,7 @@ npm run lint
 npm test
 ```
 
-245 tests across 15 files:
+261 tests across 16 files:
 
 | File | Covers |
 | --- | --- |
@@ -322,6 +326,7 @@ npm test
 | `user-store.test.ts` | The session-scoped read store used by availability pages |
 | `invites.test.ts` | Invite token shape, hashing, expiry and link building |
 | `monitoring.test.ts` | Fingerprint collapsing and the shape of a recorded event |
+| `alerts.test.ts` | Alert payloads, level filtering, signing and delivery failures |
 
 The integration suite (`tests/pipeline.test.ts`) runs the real inbound pipeline
 and follow-up engine against an in-memory `Store`, covering: enquiry → lead →
@@ -359,9 +364,10 @@ These are deliberate MVP boundaries, not oversights:
 - **Invitations are links, not emails.** The app does not send email, so an owner
   creates an invite and shares the link themselves — which for a WhatsApp-first
   product is usually the right channel anyway. Nothing here needs SMTP.
-- **Failures are recorded, not pushed.** The Health page and a dashboard banner
-  surface what broke, but nobody is paged. Add an alerting integration before you
-  rely on noticing overnight.
+- **Alerting is push, not paging.** Failures are pushed to a webhook (Slack,
+  Discord or anything that takes a JSON POST). There is no escalation, no
+  on-call rotation and no acknowledgement — if nobody reads the channel, nobody
+  finds out.
 - **English-first.** Romanised Hindi/Hinglish enquiries are understood
   (`room hai?`, `price kya hai`, `2 person`), but replies are written in English.
 - **Rate limiting is per-instance.** In-memory, so it does not coordinate across

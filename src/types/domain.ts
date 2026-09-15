@@ -514,3 +514,18 @@ export interface SystemEvent {
   resolved_at: string | null;
   resolved_by: string | null;
 }
+
+/** Non-secret projection of alert_channels, safe for the browser. */
+export interface AlertChannelStatus {
+  business_id: string;
+  enabled: boolean;
+  min_level: SystemEventLevel;
+  has_webhook_url: boolean;
+  has_signing_secret: boolean;
+  /** "Slack", "Discord" or "Custom endpoint" — never the URL itself. */
+  destination: string | null;
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+  updated_at: string;
+}
